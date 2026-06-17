@@ -30,6 +30,25 @@ logger = logging.getLogger(__name__)
 _BRAVE_ENDPOINT = "https://api.search.brave.com/res/v1/web/search"
 
 
+def _brave_env_value(name: str) -> str:
+    """Resolve env var via Hermes config layer, falling back to raw os.getenv.
+
+    During tool dispatch the .env file may not have been loaded into
+    ``os.environ`` yet (delegate children, standalone scripts, certain test
+    paths).  Go through Hermes' config-aware resolver so keys set via
+    ``hermes config set`` or in ``~/.hermes/.env`` are always picked up.
+    See the fix for brave-free not finding BRAVE_SEARCH_API_KEY.
+    """
+    try:
+        from hermes_cli.config import get_env_value
+        val = get_env_value(name)
+    except Exception:
+        val = None
+    if val is None:
+        val = os.getenv(name, "")
+    return (val or "").strip()
+
+
 class BraveFreeWebSearchProvider(WebSearchProvider):
     """Search-only Brave provider using the free-tier Data-for-Search API.
 
@@ -49,7 +68,7 @@ class BraveFreeWebSearchProvider(WebSearchProvider):
 
     def is_available(self) -> bool:
         """Return True when ``BRAVE_SEARCH_API_KEY`` is set to a non-empty value."""
-        return bool(os.getenv("BRAVE_SEARCH_API_KEY", "").strip())
+        return bool(_brave_env_value("BRAVE_SEARCH_API_KEY"))
 
     def supports_search(self) -> bool:
         return True
@@ -65,9 +84,9 @@ class BraveFreeWebSearchProvider(WebSearchProvider):
         """
         import httpx
 
-        api_key = os.getenv("BRAVE_SEARCH_API_KEY", "").strip()
+        api_key = _brave_env_value("BRAVE_SEARCH_API_KEY")
         if not api_key:
-            return {"success": False, "error": "BRAVE_SEARCH_API_KEY is not set"}
+            return {"success": False, "error": "BRAVE_SEARCH_API_KEY is not set. Get a free key at https://brave.com/search/api/ and set via: hermes config set env.BRAVE_SEARCH_API_KEY <key>"}
 
         # Brave's `count` is capped at 20.
         count = max(1, min(int(limit), 20))
