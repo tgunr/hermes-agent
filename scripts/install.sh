@@ -1131,7 +1131,9 @@ clone_repo() {
     fi
 
     if [ -d "$INSTALL_DIR" ]; then
-        if [ -d "$INSTALL_DIR/.git" ]; then
+        # A git working tree may use a regular .git/ directory or a .git
+        # gitfile (e.g. when the checkout is a git submodule). Accept either.
+        if [ -d "$INSTALL_DIR/.git" ] || [ -f "$INSTALL_DIR/.git" ]; then
             log_info "Existing installation found, updating..."
             cd "$INSTALL_DIR"
 
