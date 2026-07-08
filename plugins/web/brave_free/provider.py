@@ -68,7 +68,9 @@ class BraveFreeWebSearchProvider(WebSearchProvider):
 
     def is_available(self) -> bool:
         """Return True when ``BRAVE_SEARCH_API_KEY`` is set to a non-empty value."""
-        return bool(_brave_env_value("BRAVE_SEARCH_API_KEY"))
+        from agent.web_search_provider import get_provider_env
+
+        return bool(get_provider_env("BRAVE_SEARCH_API_KEY"))
 
     def supports_search(self) -> bool:
         return True
@@ -84,7 +86,9 @@ class BraveFreeWebSearchProvider(WebSearchProvider):
         """
         import httpx
 
-        api_key = _brave_env_value("BRAVE_SEARCH_API_KEY")
+        from agent.web_search_provider import get_provider_env
+
+        api_key = get_provider_env("BRAVE_SEARCH_API_KEY")
         if not api_key:
             return {"success": False, "error": "BRAVE_SEARCH_API_KEY is not set. Get a free key at https://brave.com/search/api/ and set via: hermes config set env.BRAVE_SEARCH_API_KEY <key>"}
 
