@@ -57,9 +57,25 @@ export function EnteredProjectContent({
 
   const single = project.repos.length === 1
 
+  // Defensive: never render the same repo twice. A polluted persisted order
+  // (the same repo id appearing N times) can otherwise replicate a repo block
+  // N times in the sidebar. De-dupe by id before mapping.
+  const repos = project.repos
+  const seenRepo = new Set<string>()
+
+  const uniqueRepos = repos.filter(repo => {
+    if (seenRepo.has(repo.id)) {
+      return false
+    }
+
+    seenRepo.add(repo.id)
+
+    return true
+  })
+
   return (
     <>
-      {project.repos.map(repo => (
+      {uniqueRepos.map(repo => (
         <RepoFlatSection
           discoveredWorktrees={repo.path ? repoWorktrees?.[repo.path] : undefined}
           key={repo.id}

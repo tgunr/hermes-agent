@@ -51,6 +51,26 @@ describe('reconcileOrderIds', () => {
   it('puts newly-seen ids ahead of the retained saved order', () => {
     expect(reconcileOrderIds(['fresh', 'a', 'b'], ['b', 'a', 'gone'])).toEqual(['fresh', 'b', 'a'])
   })
+
+  it('de-dupes a corrupted saved order so items are never replicated', () => {
+    // Regression: a polluted order (same id repeated) used to replicate the
+    // item N times in the rendered tree. reconcileOrderIds must collapse it.
+    expect(reconcileOrderIds(['a', 'b'], ['a', 'a', 'a', 'b'])).toEqual(['a', 'b'])
+  })
+})
+
+describe('orderByIds duplicate-order regression', () => {
+  const id = (item: { id: string }) => item.id
+
+  it('renders each item at most once even when the order repeats its id', () => {
+    // This is the exact shape of the bug: a polluted workspaceParentOrderIds
+    // with the same repo id N times must NOT produce N repo blocks.
+    const items = [{ id: 'hermes' }, { id: 'agent' }]
+    const result = orderByIds(items, id, ['hermes', 'hermes', 'hermes', 'hermes', 'hermes', 'hermes', 'hermes', 'agent'])
+
+    expect(result).toEqual([{ id: 'hermes' }, { id: 'agent' }])
+    expect(result).toHaveLength(2)
+  })
 })
 
 describe('sameIds', () => {

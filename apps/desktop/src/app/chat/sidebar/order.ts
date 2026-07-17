@@ -1,7 +1,10 @@
 /** New ids first, then ids still present in the persisted order. */
 export function reconcileFreshFirst(currentIds: string[], orderIds: string[]): string[] {
   const current = new Set(currentIds)
-  const retained = orderIds.filter(id => current.has(id))
+  // De-dupe the persisted order first: a polluted order (e.g. the same repo id
+  // appearing N times) must never be carried forward, or it would replicate the
+  // item N times in the rendered tree and re-persist the corruption.
+  const retained = [...new Set(orderIds)].filter(id => current.has(id))
   const retainedSet = new Set(retained)
 
   return [...currentIds.filter(id => !retainedSet.has(id)), ...retained]
@@ -28,16 +31,26 @@ export function orderByIds<T>(items: T[], getId: (item: T) => string, orderIds: 
     return items
   }
 
-  const byId = new Map(items.map(item => [getId(item), item]))
-  const seen = new Set<string>()
-  const ordered: T[] = []
+  // De-dupe the order so a corrupted order (same id N times) can't replicate an
+  // item N times in the rendered list. Each id resolves to at most one item.
+  const dedupedOrder: string[] = []
+  const seenOrder = new Set<string>()
 
   for (const id of orderIds) {
+    if (!seenOrder.has(id)) {
+      seenOrder.add(id)
+      dedupedOrder.push(id)
+    }
+  }
+
+  const byId = new Map(items.map(item => [getId(item), item]))
+  const ordered: T[] = []
+
+  for (const id of dedupedOrder) {
     const item = byId.get(id)
 
     if (item) {
       ordered.push(item)
-      seen.add(id)
     }
   }
 
@@ -46,7 +59,8 @@ export function orderByIds<T>(items: T[], getId: (item: T) => string, orderIds: 
   // these at the TOP instead of burying them beneath the saved order —
   // otherwise a brand-new session sinks to the bottom of the sidebar and reads
   // as "my latest session never showed up".
-  const fresh = items.filter(item => !seen.has(getId(item)))
+  const seenItems = new Set(ordered.map(getId))
+  const fresh = items.filter(item => !seenItems.has(getId(item)))
 
   return fresh.length ? [...fresh, ...ordered] : ordered
 }
