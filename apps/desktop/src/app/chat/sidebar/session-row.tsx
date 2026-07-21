@@ -150,7 +150,9 @@ export function SidebarSessionRow({
         style={style}
         {...rest}
       >
-        {isWorking && !needsInput && <span aria-hidden="true" className="arc-border" />}
+        {isSelected && isWorking && !needsInput && (
+          <span aria-hidden="true" className="arc-border" />
+        )}
         <SidebarRowBody
           className={cn('z-0 group-hover:pr-12', branchStem && 'pl-3.5')}
           onClick={event => {
