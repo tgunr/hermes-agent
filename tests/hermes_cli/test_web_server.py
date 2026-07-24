@@ -6244,6 +6244,52 @@ class TestPtyWebSocket:
         assert env["TERMINAL_DOCKER_IMAGE"] == "example/hermes-tools:latest"
         assert env["TERMINAL_DOCKER_EXTRA_ARGS"] == '["--network=host"]'
 
+    def test_resolve_chat_argv_profile_scoped_uses_requested_profile_cwd(
+        self, monkeypatch, _isolate_hermes_home
+    ):
+        """PR #49153 regression: a profile-scoped chat child must read the
+        *requested* profile's terminal.cwd, not the launch profile's.
+
+        Before the fix, _resolve_chat_argv() ran apply_terminal_config_to_env()
+        (which reads the launch profile's config.yaml) BEFORE HERMES_HOME was
+        scoped to the requested profile. A profile switch therefore leaked the
+        previous profile's terminal.cwd (e.g. a Samba mount) into TERMINAL_CWD
+        for every new session under the new profile.
+        """
+        import hermes_cli.main as main_mod
+
+        # Launch profile (HERMES_HOME at import) pins a stale Samba cwd.
+        launch_home = Path(os.environ["HERMES_HOME"])
+        (launch_home / "config.yaml").write_text(
+            "\n".join(["terminal:", "  cwd: /Volumes/davec/stale-samba"]),
+            encoding="utf-8",
+        )
+
+        # Requested profile under a separate HERMES_HOME with the correct cwd.
+        prof_home = launch_home.parent / (launch_home.name + "-prof")
+        prof_home.mkdir(parents=True, exist_ok=True)
+        (prof_home / "config.yaml").write_text(
+            "\n".join(["terminal:", "  cwd: /Users/davec/correct-workspace"]),
+            encoding="utf-8",
+        )
+
+        monkeypatch.setattr(
+            main_mod,
+            "_make_tui_argv",
+            lambda project_root, tui_dev=False: (["node", "dist/entry.js"], "/tmp/ui-tui"),
+        )
+        monkeypatch.setattr(
+            self.ws_module,
+            "_resolve_profile_dir",
+            lambda name: prof_home,
+        )
+
+        _argv, _cwd, env = self.ws_module._resolve_chat_argv(profile="prof")
+
+        assert env["HERMES_HOME"] == str(prof_home)
+        assert env["TERMINAL_CWD"] == "/Users/davec/correct-workspace"
+        assert env.get("TERMINAL_CWD") != "/Volumes/davec/stale-samba"
+
     def test_rejects_when_embedded_chat_disabled(self, monkeypatch):
         monkeypatch.setattr(self.ws_module, "_DASHBOARD_EMBEDDED_CHAT_ENABLED", False)
         from starlette.websockets import WebSocketDisconnect

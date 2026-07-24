@@ -14257,11 +14257,32 @@ def _resolve_chat_argv(
 
     argv, cwd = _make_tui_argv(PROJECT_ROOT / "ui-tui", tui_dev=False)
     env = os.environ.copy()
+    # PR #49153: a profile-scoped chat child must read the *requested* profile's
+    # terminal.cwd, not the launch profile's. apply_terminal_config_to_env() reads
+    # config via get_hermes_home() (real HERMES_HOME), so scope the config reads to
+    # the requested profile with the same contextvar override the rest of the
+    # codebase uses. Without this, a profile switch leaks the previous profile's
+    # cwd (e.g. a Samba mount) into TERMINAL_CWD for every new session under the
+    # new profile. No-op for the dashboard's own (non-scoped) chat.
+    override_token = None
+    if profile_dir is not None:
+        from hermes_constants import (
+            reset_hermes_home_override,
+            set_hermes_home_override,
+        )
+
+        override_token = set_hermes_home_override(str(profile_dir))
     try:
         from hermes_cli.config import apply_terminal_config_to_env
+
         apply_terminal_config_to_env(env=env)
     except Exception:
         _log.debug("Failed to apply terminal config bridge for dashboard chat", exc_info=True)
+    finally:
+        if override_token is not None:
+            from hermes_constants import reset_hermes_home_override
+
+            reset_hermes_home_override(override_token)
     env.setdefault("NODE_ENV", "production")
     # Browser-embedded chat should prefer stable wheel-based scrollback over
     # native terminal mouse tracking. When mouse tracking is enabled, wheel
