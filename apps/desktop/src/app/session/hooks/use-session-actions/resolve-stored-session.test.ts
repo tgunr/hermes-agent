@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type * as HermesModule from '@/hermes'
 import { getSession } from '@/hermes'
 import { $activeGatewayProfile, $profiles } from '@/store/profile'
-import { $sessions } from '@/store/session'
+import { $sessions, getRememberedSessionId, setRememberedSessionId } from '@/store/session'
 import type { SessionInfo } from '@/types/hermes'
 
 import { resolveSessionProfile, resolveStoredSession } from './utils'
@@ -13,7 +13,17 @@ vi.mock('@/hermes', async importActual => ({
   getSession: vi.fn()
 }))
 
+// Mock the remembered-last-session helpers so we can assert the dead-id eviction
+// without touching Electron localStorage. The rest of @/store/session is real.
+vi.mock('@/store/session', async importActual => ({
+  ...(await importActual<typeof import('@/store/session')>()),
+  getRememberedSessionId: vi.fn(),
+  setRememberedSessionId: vi.fn()
+}))
+
 const mockGetSession = vi.mocked(getSession)
+const mockGetRememberedSessionId = vi.mocked(getRememberedSessionId)
+const mockSetRememberedSessionId = vi.mocked(setRememberedSessionId)
 
 const session = (over: Partial<SessionInfo>): SessionInfo => over as SessionInfo
 
@@ -25,6 +35,8 @@ describe('resolveStoredSession profile ownership', () => {
     $profiles.set(profiles('default', 'meta'))
     $activeGatewayProfile.set('meta')
     mockGetSession.mockReset()
+    mockGetRememberedSessionId.mockReset()
+    mockSetRememberedSessionId.mockReset()
   })
 
   afterEach(() => {
@@ -105,5 +117,33 @@ describe('resolveStoredSession profile ownership', () => {
     mockGetSession.mockResolvedValueOnce(session({ id: 's1', profile: 'default' }))
 
     await expect(resolveSessionProfile('s1')).resolves.toBe('default')
+  })
+
+  it('forgets a remembered last-session id that 404s on every profile', async () => {
+    // The persisted last session was purged from the backend (cross-profile
+    // rotation, manual delete). getSession 404s on the active profile and all
+    // others — the id is genuinely dead and must be forgotten so a cold start
+    // doesn't re-404 every launch.
+    $profiles.set(profiles('default', 'meta'))
+    $activeGatewayProfile.set('meta')
+    mockGetRememberedSessionId.mockReturnValue('gone')
+    mockGetSession.mockRejectedValue(new Error('404: Session not found'))
+
+    const resolved = await resolveStoredSession('gone')
+
+    expect(resolved).toBeUndefined()
+    expect(mockSetRememberedSessionId).toHaveBeenCalledWith(null, 'meta')
+  })
+
+  it('does NOT forget the remembered id on a transient (non-404) error', async () => {
+    $profiles.set(profiles('default', 'meta'))
+    $activeGatewayProfile.set('meta')
+    mockGetRememberedSessionId.mockReturnValue('flaky')
+    mockGetSession.mockRejectedValue(new Error('500: Internal Server Error'))
+
+    const resolved = await resolveStoredSession('flaky')
+
+    expect(resolved).toBeUndefined()
+    expect(mockSetRememberedSessionId).not.toHaveBeenCalled()
   })
 })

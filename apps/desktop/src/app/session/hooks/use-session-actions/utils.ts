@@ -1,5 +1,6 @@
 import { textWithoutReferenceLines } from '@/components/assistant-ui/reference-kinds'
 import { getSession } from '@/hermes'
+import { isSessionNotFoundError } from '@/app/session/hooks/use-prompt-actions/utils'
 import { assistantTextPart, type ChatMessage, chatMessageText, textPart } from '@/lib/chat-messages'
 import { normalizePersonalityValue } from '@/lib/chat-runtime'
 import { embeddedImageUrls, textWithoutEmbeddedImages } from '@/lib/embedded-images'
@@ -9,6 +10,8 @@ import { $activeGatewayProfile, $profiles, normalizeProfileKey } from '@/store/p
 import {
   $currentCwd,
   $sessions,
+  getRememberedSessionId,
+  rememberedSessionProfile,
   sessionMatchesStoredId,
   setCurrentBranch,
   setCurrentCwd,
@@ -19,6 +22,7 @@ import {
   setCurrentReasoningEffort,
   setCurrentServiceTier,
   setCurrentUsage,
+  setRememberedSessionId,
   setSessions,
   setYoloActive
 } from '@/store/session'
@@ -855,6 +859,8 @@ export async function resolveStoredSession(storedSessionId: string): Promise<Ses
   // Direct by-id on the live backend — one row lookup, no list scan. Covers
   // single-profile users and any id on the active profile (e.g. an old session
   // past the sidebar's recent window). 404 just means it's not on this profile.
+  let sessionNotFound = false
+
   try {
     const session = await getSession(storedSessionId)
 
@@ -867,8 +873,16 @@ export async function resolveStoredSession(storedSessionId: string): Promise<Ses
     upsertResolvedSession(session, storedSessionId)
 
     return session
-  } catch {
-    // Not on the active profile — fall through to the cross-profile probe.
+  } catch (err) {
+    // A genuine "Session not found" (404) means the id is gone from this
+    // backend — not merely on another profile. Track it so a dead id (e.g. a
+    // remembered last-session whose row was purged) gets forgotten below
+    // instead of re-404ing on every launch. Any other error (network, 5xx) is
+    // transient and must NOT evict the remembered id.
+    if (isSessionNotFoundError(err)) {
+      sessionNotFound = true
+    }
+    // Otherwise: not on the active profile — fall through to the cross-profile probe.
   }
 
   // Multi-profile only: probe each other profile by id (still one cheap lookup
@@ -894,8 +908,24 @@ export async function resolveStoredSession(storedSessionId: string): Promise<Ses
       upsertResolvedSession(session, storedSessionId)
 
       return session
-    } catch {
+    } catch (err) {
+      if (isSessionNotFoundError(err)) {
+        sessionNotFound = true
+      }
       // Not on this profile; try the next.
+    }
+  }
+
+  // The id 404'd on the active profile AND every other profile — it no longer
+  // exists in the backend. Drop it as the remembered last session so a cold
+  // start doesn't try to restore a phantom conversation and re-404 every
+  // launch (the "Session not found" resume spam). The tile/path that requested
+  // it surfaces its own error card; forgetting here only stops the loop.
+  if (sessionNotFound) {
+    const rememberedOwner = rememberedSessionProfile($sessions.get(), storedSessionId, activeKey)
+
+    if (getRememberedSessionId(rememberedOwner) === storedSessionId) {
+      setRememberedSessionId(null, rememberedOwner)
     }
   }
 
