@@ -1949,6 +1949,10 @@ async def _send_bluebubbles(extra, chat_id, message):
         from gateway.config import PlatformConfig
         pconfig = PlatformConfig(extra=extra)
         adapter = BlueBubblesAdapter(pconfig)
+        # Outbound-only send: the standalone / cron path does not need an inbound
+        # webhook listener (and starting one collides with the gateway's port on
+        # 8645). Disable the listener without touching the live gateway adapter.
+        adapter.webhook_enabled = False
         connected = await adapter.connect()
         if not connected:
             return _error("BlueBubbles: failed to connect to server")

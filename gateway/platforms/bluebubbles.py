@@ -187,6 +187,17 @@ class BlueBubblesAdapter(BasePlatformAdapter):
         )
         if not str(self.webhook_path).startswith("/"):
             self.webhook_path = f"/{self.webhook_path}"
+        # Standalone / cron-context sends (see send_message_tool._send_bluebubbles)
+        # only need the outbound REST API — they must NOT start an inbound webhook
+        # listener, because that collides with the port the live gateway adapter
+        # already owns (Errno 48: address already in use). The default True path
+        # preserves gateway behavior exactly.
+        self.webhook_enabled = bool(
+            extra.get("webhook_enabled", True)
+            if "webhook_enabled" in extra
+            else os.getenv("BLUEBUBBLES_WEBHOOK_ENABLED", "true")
+            not in {"0", "false", "no", "off"}
+        )
         self.send_read_receipts = bool(extra.get("send_read_receipts", True))
         _require_mention = extra.get("require_mention")
         if _require_mention is None:
@@ -305,25 +316,34 @@ class BlueBubblesAdapter(BasePlatformAdapter):
         # aiohttp access logs write that request target to agent.log.
         self._runner = web.AppRunner(app, access_log=None)
         await self._runner.setup()
-        site = web.TCPSite(self._runner, self.webhook_host, self.webhook_port)
-        await site.start()
-        self._mark_connected()
-        logger.info(
-            "[bluebubbles] webhook listening on http://%s:%s%s",
-            self.webhook_host,
-            self.webhook_port,
-            self.webhook_path,
-        )
-
-        # Register webhook with BlueBubbles server
-        # This is required for the server to know where to send events
-        await self._register_webhook()
-
+        if self.webhook_enabled:
+            site = web.TCPSite(self._runner, self.webhook_host, self.webhook_port)
+            await site.start()
+            self._mark_connected()
+            logger.info(
+                "[bluebubbles] webhook listening on http://%s:%s%s",
+                self.webhook_host,
+                self.webhook_port,
+                self.webhook_path,
+            )
+            # Register webhook with BlueBubbles server
+            # This is required for the server to know where to send events
+            await self._register_webhook()
+        else:
+            # Standalone / cron-context send: outbound REST API only, no inbound
+            # listener. Avoids colliding with the gateway's webhook port (#Errno48).
+            logger.info(
+                "[bluebubbles] webhook listener disabled (standalone send); "
+                "outbound only"
+            )
+            self._mark_connected()
         return True
 
     async def disconnect(self) -> None:
-        # Unregister webhook before cleaning up
-        await self._unregister_webhook()
+        # Unregister webhook before cleaning up — but only if we started one
+        # (the standalone-send path leaves _runner set yet registered nothing).
+        if self.webhook_enabled:
+            await self._unregister_webhook()
 
         if self.client:
             await self.client.aclose()
