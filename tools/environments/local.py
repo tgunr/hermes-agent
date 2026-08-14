@@ -605,6 +605,16 @@ def hermes_subprocess_env(*, inherit_credentials: bool = False) -> dict[str, str
     """
     env = os.environ.copy()
 
+    # Polluted interpreter env must never leak into a spawned tool process.
+    # The terminal session snapshot injects PYTHONPATH pointing at Hermes'
+    # own venv site-packages; uvx/uv-managed tools (browser-use) run under a
+    # DIFFERENT Python version and importing the Hermes venv's pydantic_core
+    # from there fails with ModuleNotFoundError (pydantic_core._pydantic_core).
+    # VIRTUAL_ENV is likewise a marker for a different interpreter and can
+    # make children resolve the wrong site-packages.
+    env.pop("PYTHONPATH", None)
+    env.pop("VIRTUAL_ENV", None)
+
     # Tier 1 — always strip.
     for key in _ALWAYS_STRIP_KEYS:
         env.pop(key, None)
