@@ -12335,6 +12335,33 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                     import subprocess
                     exec_cmd = qcmd.get("command", "")
                     if exec_cmd:
+                        # Substitute $1 / $@ placeholders with the user's args
+                        # so prompts reach the script instead of expanding to empty.
+                        # The config may wrap $1 in quotes (e.g. "...$1" or '$1');
+                        # replace the entire quoted form so shlex.quote() output
+                        # (single-quoted) isn't nested inside double quotes where
+                        # single quotes become literal characters.
+                        user_args = cmd_original[len(base_cmd):].strip()
+                        if user_args:
+                            import shlex
+                            # $1 = whole prompt as ONE argument; $@ = each word
+                            # as its own argument (for subcommand-style scripts).
+                            quoted_all = " ".join(
+                                shlex.quote(w) for w in shlex.split(user_args)
+                            )
+                            exec_cmd = exec_cmd.replace(
+                                '"$1"', shlex.quote(user_args))
+                            exec_cmd = exec_cmd.replace(
+                                '"$@"', quoted_all)
+                            exec_cmd = exec_cmd.replace(
+                                "'$1'", shlex.quote(user_args))
+                            exec_cmd = exec_cmd.replace(
+                                "'$@'", quoted_all)
+                            # Fallback: bare $1/$@ (no quotes in config)
+                            exec_cmd = exec_cmd.replace(
+                                "$1", shlex.quote(user_args))
+                            exec_cmd = exec_cmd.replace(
+                                "$@", quoted_all)
                         try:
                             # shell=True is intentional: quick_commands are user-defined
                             # shell snippets from config.yaml — not agent/LLM controlled.
