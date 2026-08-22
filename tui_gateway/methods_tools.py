@@ -11,6 +11,29 @@ method = _registry.method
 _profile_scoped = _registry.profile_scoped
 
 
+def _substitute_quick_command_args(cmd: str, arg: str) -> str:
+    """Return cmd with $1/$@ replaced by the shell-quoted arg.
+
+    The config may wrap $1 in quotes (e.g. "...$1" or '$1'); replace the
+    entire quoted form so shlex.quote() output (single-quoted) isn't nested
+    inside double quotes where single quotes become literal characters.
+
+    $1 = whole arg as ONE argument; $@ = each word as its own argument
+    (for subcommand-style scripts like `am.py search <query>`).
+    """
+    if not arg:
+        return cmd
+    import shlex
+    quoted_one = shlex.quote(arg)
+    quoted_all = " ".join(shlex.quote(w) for w in shlex.split(arg))
+    # Replace quoted forms first (full match including surrounding quotes)
+    cmd = cmd.replace('"$1"', quoted_one).replace('"$@"', quoted_all)
+    cmd = cmd.replace("'$1'", quoted_one).replace("'$@'", quoted_all)
+    # Fallback: bare $1/$@ (no quotes in config)
+    cmd = cmd.replace("$1", quoted_one).replace("$@", quoted_all)
+    return cmd
+
+
 @method("system.battery")
 def _(rid, params: dict) -> dict:
     """Return the host battery status for the status-bar read-out.
@@ -449,7 +472,8 @@ def _(rid, params: dict) -> dict:
             from hermes_cli._subprocess_compat import windows_hide_flags
 
             r = subprocess.run(
-                qc.get("command", ""),
+                _substitute_quick_command_args(
+                    qc.get("command", ""), arg),
                 shell=True,
                 capture_output=True,
                 text=True,
