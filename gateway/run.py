@@ -2423,7 +2423,10 @@ def _current_max_iterations() -> int:
     return _resolve_turn_limit(os.getenv("HERMES_MAX_ITERATIONS"))
 
 
-from contextlib import contextmanager as _contextmanager
+from contextlib import (
+    asynccontextmanager as _asynccontextmanager,
+    contextmanager as _contextmanager,
+)
 
 
 # Platforms that bind a host TCP port (HTTP/webhook listeners). In a profile
@@ -2559,8 +2562,24 @@ def _terminal_scope_cwd(default: str = "") -> str:
     return _ts_env("TERMINAL_CWD", default)
 
 
+def _load_profile_secret_scope(profile_home: "Path") -> dict:
+    """Hydrate and load one profile's secrets under its home override."""
+    from hermes_constants import set_hermes_home_override, reset_hermes_home_override
+    from agent.secret_scope import build_profile_secret_scope
+    from hermes_cli.env_loader import hydrate_profile_secret_sources
+
+    home_token = set_hermes_home_override(str(profile_home))
+    try:
+        hydrate_profile_secret_sources(Path(profile_home))
+        return build_profile_secret_scope(Path(profile_home))
+    finally:
+        reset_hermes_home_override(home_token)
+
+
 @_contextmanager
-def _profile_runtime_scope(profile_home: "Path"):
+def _profile_runtime_scope(
+    profile_home: "Path", prepared_secret_scope: Optional[dict] = None,
+):
     """Scope config/skills/memory AND credentials to a profile for one turn.
 
     Combines the two seams the multiplexer needs:
@@ -2580,15 +2599,17 @@ def _profile_runtime_scope(profile_home: "Path"):
     """
     from hermes_constants import set_hermes_home_override, reset_hermes_home_override
     from agent.secret_scope import (
-        build_profile_secret_scope,
         set_secret_scope,
         reset_secret_scope,
     )
-    from hermes_cli.env_loader import hydrate_profile_secret_sources
 
     home_token = set_hermes_home_override(str(profile_home))
-    hydrate_profile_secret_sources(Path(profile_home))
-    secret_token = set_secret_scope(build_profile_secret_scope(Path(profile_home)))
+    secrets = (
+        prepared_secret_scope
+        if prepared_secret_scope is not None
+        else _load_profile_secret_scope(Path(profile_home))
+    )
+    secret_token = set_secret_scope(secrets)
     # Per-turn terminal scope (third seam of the profile boundary): installs
     # the routed profile's COMPLETE terminal policy — never ambient env — via
     # tools.terminal_scope. Without it terminal_tool reads the process-global
@@ -2602,6 +2623,14 @@ def _profile_runtime_scope(profile_home: "Path"):
         finally:
             reset_secret_scope(secret_token)
             reset_hermes_home_override(home_token)
+
+
+@_asynccontextmanager
+async def _async_profile_runtime_scope(profile_home: "Path"):
+    """Enter a profile scope without loading secret files on the event loop."""
+    secrets = await asyncio.to_thread(_load_profile_secret_scope, Path(profile_home))
+    with _profile_runtime_scope(Path(profile_home), secrets):
+        yield
 
 
 def load_gateway_config_for_runner() -> "GatewayConfig":
@@ -14874,7 +14903,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 if _phome is None:
                     await _reclaim_stale(self)
                 else:
-                    with _profile_runtime_scope(_phome):
+                    async with _async_profile_runtime_scope(_phome):
                         await _reclaim_stale(self)
             except Exception:
                 logger.debug("Stale-handoff reclaim failed", exc_info=True)
@@ -14886,7 +14915,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                         if profile_home is None:
                             await _tick(profile_name)
                         else:
-                            with _profile_runtime_scope(profile_home):
+                            async with _async_profile_runtime_scope(profile_home):
                                 await _tick(profile_name)
                 except asyncio.CancelledError:
                     raise
@@ -14964,14 +14993,22 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             # The watcher already entered _profile_runtime_scope for this
             # profile, so a fresh load resolves that profile's config.yaml
             # and .env (home channel, tokens) rather than the primary's.
+            # Fail closed on a load error: self.config is the primary's, so
+            # falling back would deliver through the right bot to the
+            # WRONG chat and report completed. A failed row the CLI can
+            # retry beats a wrong delivery.
             try:
                 handoff_config = load_gateway_config()
-            except Exception:
-                logger.warning(
+            except Exception as exc:
+                logger.error(
                     "Handoff: could not load config for profile %s; "
-                    "falling back to the primary's config",
+                    "failing the handoff instead of delivering via the "
+                    "primary's config",
                     profile_name, exc_info=True,
                 )
+                raise RuntimeError(
+                    f"could not load config for profile '{profile_name}': {exc}"
+                ) from exc
 
         # Adapter must be live. A relay-fronted gateway registers ONE adapter
         # under Platform.RELAY that fronts N logical platforms — so a literal
@@ -17340,7 +17377,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             except Exception:
                 pass
             if profile_home is not None:
-                with _profile_runtime_scope(profile_home):
+                async with _async_profile_runtime_scope(profile_home):
                     return await self._handle_message(event)
             return await self._handle_message(event)
 
@@ -17404,7 +17441,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 if getattr(source, "profile", None)
                 else default_home
             )
-            with _profile_runtime_scope(profile_home):
+            async with _async_profile_runtime_scope(profile_home):
                 return await self._handle_message(event)
 
         return _handler
@@ -20419,7 +20456,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
     ) -> Optional[str]:
         """Run inbound preprocessing under the routed profile when multiplexed."""
         if getattr(getattr(self, "config", None), "multiplex_profiles", False):
-            with _profile_runtime_scope(self._resolve_profile_home_for_source(source)):
+            async with _async_profile_runtime_scope(
+                self._resolve_profile_home_for_source(source)
+            ):
                 return await self._prepare_inbound_message_text(
                     event=event,
                     source=source,
