@@ -25,7 +25,15 @@ def _substitute_quick_command_args(cmd: str, arg: str) -> str:
         return cmd
     import shlex
     quoted_one = shlex.quote(arg)
-    quoted_all = " ".join(shlex.quote(w) for w in shlex.split(arg))
+    try:
+        words = shlex.split(arg)
+    except ValueError:
+        # shlex.split is strict in posix mode and raises "No closing quotation"
+        # on an unbalanced quote in the user's prompt (e.g. `/optimize he said
+        # "hi`). Fall back to one token so $@ behaves like $1 instead of
+        # surfacing the ValueError to the caller.
+        words = [arg]
+    quoted_all = " ".join(shlex.quote(w) for w in words)
     # Replace quoted forms first (full match including surrounding quotes)
     cmd = cmd.replace('"$1"', quoted_one).replace('"$@"', quoted_all)
     cmd = cmd.replace("'$1'", quoted_one).replace("'$@'", quoted_all)
@@ -508,20 +516,45 @@ def _(rid, params: dict) -> dict:
             sanitized_env = build_subprocess_env()
             from hermes_cli._subprocess_compat import windows_hide_flags
 
-            r = subprocess.run(
-                _substitute_quick_command_args(
-                    qc.get("command", ""), arg),
-                shell=True,
-                capture_output=True,
-                text=True,
-                # Force UTF-8 + lossy decode so non-UTF-8 child output can't
-                # crash the gateway thread on locale-mismatched Windows (#53137).
-                encoding="utf-8", errors="replace",
-                timeout=30,
-                stdin=subprocess.DEVNULL,
-                env=sanitized_env,
-                creationflags=windows_hide_flags(),
-            )
+            # Resolve the helper via its absolute module path. This handler is
+            # rebound onto server.py's globals at install time (method_ctx), so
+            # the module-local `_substitute_quick_command_args` defined below is
+            # NOT in scope here — referencing it as a bare name raises NameError
+            # and the desktop gets a bare "internal error" on every quick command.
+            from tui_gateway.methods_tools import _substitute_quick_command_args
+            try:
+                r = subprocess.run(
+                    _substitute_quick_command_args(
+                        qc.get("command", ""), arg),
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    # Force UTF-8 + lossy decode so non-UTF-8 child output can't
+                    # crash the gateway thread on locale-mismatched Windows (#53137).
+                    encoding="utf-8", errors="replace",
+                    timeout=120,
+                    stdin=subprocess.DEVNULL,
+                    env=sanitized_env,
+                    creationflags=windows_hide_flags(),
+                )
+            except subprocess.TimeoutExpired:
+                # Uncaught before this guard: a slow child (e.g. cold local model
+                # load on the first /optimize of a session) blew the old 30s cap
+                # and surfaced to the desktop as a bare "internal error". Return a
+                # real diagnostic instead of crashing the dispatch handler.
+                return _err(
+                    rid,
+                    4019,
+                    "quick command timed out (>120s). If it calls a local model "
+                    "(Ollama), the first run may be slow while the model loads — "
+                    "retry once it is resident, or run it from a terminal.",
+                )
+            except Exception as exc:  # child spawn/exec failure must not 500 the handler
+                return _err(
+                    rid,
+                    4020,
+                    f"quick command failed to run: {type(exc).__name__}: {exc}",
+                )
             output = (
                 (r.stdout or "")
                 + ("\n" if r.stdout and r.stderr else "")

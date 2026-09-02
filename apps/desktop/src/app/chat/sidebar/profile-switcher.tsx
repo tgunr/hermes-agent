@@ -496,20 +496,7 @@ export function ProfileRail() {
                       {activeStrip}
                     </span>
                   </Fragment>
-                ) : (
-                  <FleetRestGroup
-                    colors={colors}
-                    first={index === 0}
-                    group={entry.group}
-                    key={entry.group.connectionId}
-                    onDelete={setPendingRestDelete}
-                    onEditSoul={setPendingRestSoul}
-                    onRecolor={(agent, color) => setProfileColor(agent.profile, color)}
-                    onRename={setPendingRestRename}
-                    onSelect={switchToRest}
-                    pendingRoute={pendingRoute}
-                  />
-                )
+                ) : null
               )
             : activeStrip}
 

@@ -3,7 +3,7 @@ import { sortableKeyboardCoordinates } from '@dnd-kit/sortable'
 import { useStore } from '@nanostores/react'
 import type * as React from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useLocation } from 'react-router'
+import { useLocation, useNavigate } from 'react-router'
 
 import { PlatformAvatar } from '@/app/messaging/platform-icon'
 import { Button } from '@/components/ui/button'
@@ -138,6 +138,7 @@ import {
   ARTIFACTS_ROUTE,
   CRON_ROUTE,
   MESSAGING_ROUTE,
+  SETTINGS_ROUTE,
   SIDEBAR_NAV_AREA,
   type SidebarNavContribution,
   SKILLS_ROUTE
@@ -150,6 +151,7 @@ import { SidebarLoadMoreRow } from './load-more-row'
 import { orderByIds, reconcileOrderIds, resolveManualSessionOrderIds, sameIds } from './order'
 import { filterSessionsByProfileScope } from './profile-scope'
 import { ProfileRail } from './profile-switcher'
+import { ConnectionSwitcher } from './connection-switcher'
 import { ProjectDialog } from './project-dialog'
 import {
   excludeProjectSessions,
@@ -324,6 +326,7 @@ export function ChatSidebar({
   const { t } = useI18n()
   const s = t.sidebar
   const { pathname } = useLocation()
+  const navigate = useNavigate()
   // Contributed nav rows (plugins pairing a page with a sidebar entry) render
   // below the built-ins with the same chrome; active = at their route.
   const navContributions = useContributions(SIDEBAR_NAV_AREA)
@@ -1471,6 +1474,17 @@ export function ChatSidebar({
       <SidebarContent className="gap-0 overflow-hidden bg-transparent px-2.5">
         <SidebarGroup className="shrink-0 p-0 pb-2 pt-[calc(var(--titlebar-height)+0.375rem)]">
           <SidebarGroupContent>
+            {/* Gateway switcher — a clearly separated, ICON-ONLY (globe) pop-up
+                trigger pinned to the far-left top, ABOVE the profile rail. A
+                bordered globe button that opens the gateway dropdown (no
+                horizontal sprawl). Auto-hides only when a single gateway is
+                registered. Clicking switches the active gateway. */}
+            <div className="px-1 pb-1.5 pt-0.5">
+              <div className="rounded-md border border-(--ui-stroke-tertiary) bg-(--popover) px-1 py-0.5 shadow-sm">
+                <ConnectionSwitcher onConnect={gatewayId => gatewayId && navigate(`/connections/${gatewayId}`)} />
+              </div>
+            </div>
+            <div className="mx-2 mb-1 border-b border-(--sidebar-edge-border)" />
             <SidebarMenu className="gap-px">
               {[...SIDEBAR_NAV, ...contributedNav].map(item => {
                 const isInteractive = Boolean(item.action) || Boolean(item.route)

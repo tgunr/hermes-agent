@@ -40,7 +40,7 @@ import { isAuxiliaryWindow, isPeerInstanceWindow } from '@/store/windows'
 
 import { ConnectionGlyph } from './connection-glyph'
 
-export function ConnectionSwitcher({ compact = false, onConnect }: { compact?: boolean; onConnect: () => void }) {
+export function ConnectionSwitcher({ compact = false, iconOnly = false, onConnect }: { compact?: boolean; iconOnly?: boolean; onConnect: () => void }) {
   const { t } = useI18n()
   const registry = useStore($connectionsRegistry)
   const activeConnectionId = useStore($activeConnectionId)
@@ -120,9 +120,11 @@ export function ConnectionSwitcher({ compact = false, onConnect }: { compact?: b
     return () => window.removeEventListener('keydown', closeOnEscape, { capture: true })
   }, [menuOpen])
 
-  if (connections.length <= 1) {
-    return null
-  }
+  // NOTE: previously `if (connections.length <= 1) return null` hid the switcher
+  // whenever the connections registry wasn't yet populated (e.g. during a degraded
+  // boot / "Resume failed" state). That made gateway switching impossible in exactly
+  // the state the user hits on a fresh launch. We now ALWAYS render the trigger; the
+  // dropdown gracefully handles a stale/empty list.
 
   const choose = (connectionId: string) => {
     triggerHaptic('selection')
@@ -155,6 +157,7 @@ export function ConnectionSwitcher({ compact = false, onConnect }: { compact?: b
           <ConnectionSwitcherTrigger
             activeConnection={activeConnection}
             compact={compact}
+            iconOnly={iconOnly}
             pending={pendingConnectionId !== null}
             title={t.settings.connections.title}
           />
@@ -249,6 +252,7 @@ export function ConnectionSwitcher({ compact = false, onConnect }: { compact?: b
 interface ConnectionMenuProps {
   activeConnection?: DesktopRegistryConnection
   compact: boolean
+  iconOnly: boolean
   pending: boolean
   title: string
 }
@@ -256,10 +260,38 @@ interface ConnectionMenuProps {
 function ConnectionSwitcherTrigger({
   activeConnection,
   compact,
+  iconOnly,
   pending,
   title,
   ...triggerProps
 }: ConnectionMenuProps & React.ComponentProps<'button'>) {
+  // Icon-only mode: a compact pop-up trigger (no inline label, no horizontal
+  // sprawl). Clicking opens the same dropdown. Used for the far-left sidebar
+  // gateway switch so switching never forces the sidebar wider.
+  if (iconOnly) {
+    return (
+      <Button
+        {...triggerProps}
+        aria-label={activeConnection ? `${title}: ${activeConnection.label}` : title}
+        className={cn(
+          'h-7 w-7 min-w-0 justify-center rounded-md px-0 text-(--ui-text-secondary) hover:bg-(--ui-control-hover-background) hover:text-foreground data-[state=open]:bg-(--ui-control-active-background) data-[state=open]:text-foreground',
+          triggerProps.className
+        )}
+        size="icon"
+        type="button"
+        variant="ghost"
+      >
+        {pending ? (
+          <Loader2 aria-hidden="true" className="size-3.5 animate-spin" />
+        ) : activeConnection ? (
+          <ConnectionGlyph connection={activeConnection} />
+        ) : (
+          <Codicon aria-hidden="true" name="globe" size="0.875rem" />
+        )}
+      </Button>
+    )
+  }
+
   return (
     <Button
       {...triggerProps}
@@ -276,7 +308,10 @@ function ConnectionSwitcherTrigger({
       <span className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
         {pending && <Loader2 aria-hidden="true" className="size-3 shrink-0 animate-spin" />}
         {activeConnection ? (
-          <ConnectionLabel connection={activeConnection} />
+          <>
+            <span className="shrink-0 font-medium text-(--ui-text-primary)">Gateway:</span>
+            <ConnectionLabel connection={activeConnection} />
+          </>
         ) : (
           <span className="truncate">{title}</span>
         )}
