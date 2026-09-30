@@ -2491,8 +2491,47 @@ def _rotate_worker_log(
 
 def _module_hermes_argv() -> list[str]:
     """Interpreter-bound Hermes CLI invocation (``hermes_cli.main`` is the
-    console-script target — there is no top-level ``hermes`` package)."""
-    return [sys.executable, "-m", "hermes_cli.main"]
+    console-script target — there is no top-level ``hermes`` package).
+
+    Guarded: ``python -m hermes_cli.main`` only works when ``hermes_cli`` is
+    reachable from the interpreter's *default* path (site-packages, editable
+    install). Source installations reached through the ``.hermes/bin/hermes``
+    launcher (``sys.path.insert`` + ``hermes_bootstrap``) import ``hermes_cli``
+    in-process but cannot re-derive that path in a fresh ``-m`` child — the
+    child dies with ``ModuleNotFoundError``. In that case return the
+    installation-bound launcher argv instead (``hermes_cli._launchers.
+    runtime_command``), which re-applies the same path insert + bootstrap.
+
+    The deciding check is a default-path import probe (cached per process):
+    ``find_spec`` alone cannot distinguish site-packages installs from the
+    launcher's runtime sys.path insert — both report a real file origin.
+    """
+    global _module_hermes_argv_cache
+    if _module_hermes_argv_cache is not None:
+        return list(_module_hermes_argv_cache)
+
+    module_argv = [sys.executable, "-m", "hermes_cli.main"]
+    try:
+        import importlib.util
+
+        spec = importlib.util.find_spec("hermes_cli")
+        if spec is not None:
+            probe = subprocess.run(
+                [sys.executable, "-I", "-c", "import hermes_cli"],
+                capture_output=True, timeout=60,
+            )
+            if probe.returncode != 0:
+                from hermes_cli._launchers import runtime_command
+
+                install_root = Path(__file__).resolve().parents[1]
+                module_argv = runtime_command(install_root)
+    except Exception:
+        pass
+    _module_hermes_argv_cache = list(module_argv)
+    return module_argv
+
+
+_module_hermes_argv_cache: Optional[list[str]] = None
 
 
 def _propagate_module_import_root(cmd: list[str], env: dict[str, str]) -> None:

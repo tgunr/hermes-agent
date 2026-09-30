@@ -2960,11 +2960,29 @@ def _resolve_hermes_bin() -> Optional[list[str]]:
     """Hermes update/restart argv: the running interpreter's ``python -m hermes_cli.main``
     (exactly this install), else ``hermes`` on PATH, else None. The module argv must win: a
     PATH-first lookup lets an attacker-planted ``hermes`` shadow the running install when
-    /update or /restart re-execs it (#111569)."""
+    /update or /restart re-execs it (#111569).
+
+    ``python -m hermes_cli.main`` only works when ``hermes_cli`` is reachable from the
+    interpreter's *default* path. Source installs reached through the ``.hermes/bin/hermes``
+    launcher (``sys.path.insert`` + ``hermes_bootstrap``) import ``hermes_cli`` in-process
+    but cannot re-derive that path in a fresh ``-m`` child (``ModuleNotFoundError``), so
+    the installation-bound launcher argv is returned instead. Mirrors
+    ``hermes_cli.kanban_db_dispatch._module_hermes_argv``.
+    """
+    import subprocess
+
     try:
         import importlib.util
         if importlib.util.find_spec("hermes_cli") is not None:
-            return [sys.executable, "-m", "hermes_cli.main"]
+            probe = subprocess.run(
+                [sys.executable, "-I", "-c", "import hermes_cli"],
+                capture_output=True, timeout=60,
+            )
+            if probe.returncode == 0:
+                return [sys.executable, "-m", "hermes_cli.main"]
+            from hermes_cli._launchers import runtime_command
+
+            return runtime_command(Path(__file__).resolve().parents[1])
     except Exception:
         pass
     import shutil
