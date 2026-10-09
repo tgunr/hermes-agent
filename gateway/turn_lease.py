@@ -25,7 +25,7 @@ DEFAULT_MAX_LEASES = 512
 DEFAULT_LEASE_WAIT = 5.0
 
 
-def _holder_desc(holder: Optional["TurnLeaseToken"]) -> tuple:
+def _holder_desc(holder: "Optional[TurnLeaseToken]") -> tuple:
     return (holder.owner_key, holder.generation) if holder else ("?", "?")
 
 

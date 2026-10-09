@@ -2155,7 +2155,7 @@ class BasePlatformAdapter(ABC):
         return chat_id in self._auto_tts_enabled_chats or (
             chat_id not in self._auto_tts_disabled_chats and bool(self._auto_tts_default))
 
-    def set_fatal_error_handler(self, handler: Callable[["BasePlatformAdapter"], Awaitable[None] | None]) -> None:
+    def set_fatal_error_handler(self, handler: "Callable[[BasePlatformAdapter], Awaitable[None] | None]") -> None:
         self._fatal_error_handler = handler
 
     #: Published when an adapter is installed and running but its receive

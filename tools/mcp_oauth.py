@@ -286,7 +286,7 @@ def _cached_client_info(storage: "HermesTokenStorage | None") -> dict | None:
     return info if isinstance(info, dict) else None
 
 
-def _cached_redirect(storage: "HermesTokenStorage | None") -> "tuple[str | None, int | None]":
+def _cached_redirect(storage: "HermesTokenStorage | None") -> tuple[str | None, int | None]:
     """``(https proxy URI, loopback callback port)`` from the cached client registration (None when
     absent): a DCR ``client_id`` is bound to its registered redirect URI, so a new random port under
     it gets ``redirect_uri does not match any registered URIs``."""
@@ -1175,7 +1175,7 @@ def _invalidate_tokens_on_client_change(
             storage._server_name, old_client_id, new_client_id, storage._server_name)
 
 
-def _maybe_preregister_client(storage: "HermesTokenStorage", cfg: dict, client_metadata: "OAuthClientMetadata") -> None:
+def _maybe_preregister_client(storage: HermesTokenStorage, cfg: dict, client_metadata: "OAuthClientMetadata") -> None:
     """If cfg has a pre-registered client_id, persist it to storage."""
     client_id = cfg.get("client_id")
     if not client_id:
