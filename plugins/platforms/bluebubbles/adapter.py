@@ -121,6 +121,13 @@ class BlueBubblesAdapter(BasePlatformAdapter):
         path = str(_extra_or_secret(extra, "webhook_path", "BLUEBUBBLES_WEBHOOK_PATH", DEFAULT_WEBHOOK_PATH))
         self.webhook_path = path if path.startswith("/") else f"/{path}"
         self.send_read_receipts = bool(extra.get("send_read_receipts", True))
+        # Standalone/cron sends only need the REST API; a listener there would collide with the
+        # live gateway adapter's port (EADDRINUSE). Default True preserves gateway behavior.
+        self.webhook_enabled = bool(
+            extra.get("webhook_enabled", True)
+            if "webhook_enabled" in extra
+            else os.getenv("BLUEBUBBLES_WEBHOOK_ENABLED", "true").strip().lower() not in {"0", "false", "no", "off"}
+        )
         _require_mention = extra.get("require_mention")
         if _require_mention is None:
             _require_mention = _get_scoped_secret("BLUEBUBBLES_REQUIRE_MENTION")
@@ -226,13 +233,15 @@ class BlueBubblesAdapter(BasePlatformAdapter):
         # — keep it out of aiohttp access logs.
         # Shared-listener mode (multiplex secondary): no bind; served at /p/<profile>/<webhook_path>.
         from gateway.platforms.shared_ingress import bind_listener
-        self._runner = await bind_listener(
-            self, app, self.webhook_host, self.webhook_port, self.webhook_path, access_log=None)
+        if self.webhook_enabled:
+            self._runner = await bind_listener(
+                self, app, self.webhook_host, self.webhook_port, self.webhook_path, access_log=None)
         self._mark_connected()
-        if self._runner is not None:
-            logger.info("[bluebubbles] webhook listening on http://%s:%s%s", self.webhook_host, self.webhook_port,
-                        self.webhook_path)
-        await self._register_webhook()  # the server only sends events to webhooks registered via its API
+        if self.webhook_enabled:
+            if self._runner is not None:
+                logger.info("[bluebubbles] webhook listening on http://%s:%s%s", self.webhook_host, self.webhook_port,
+                            self.webhook_path)
+            await self._register_webhook()  # the server only sends events to webhooks registered via its API
         # Plugin-registered native handlers (ctx.register_platform_handler).
         self._wire_plugin_handlers(None)
         return True
@@ -636,7 +645,8 @@ async def _standalone_send(pconfig, chat_id: str, message: str, *, thread_id: Op
     if not check_bluebubbles_requirements():
         return send_error("BlueBubbles requirements not met (need aiohttp + httpx).")
     try:
-        adapter = BlueBubblesAdapter(PlatformConfig(extra=dict(getattr(pconfig, "extra", None) or {})))
+        adapter = BlueBubblesAdapter(PlatformConfig(extra={
+            **dict(getattr(pconfig, "extra", None) or {}), "webhook_enabled": False}))
         if not await adapter.connect():
             return send_error("BlueBubbles: failed to connect to server")
         try:
