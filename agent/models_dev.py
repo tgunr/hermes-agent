@@ -963,12 +963,16 @@ def _should_hide_from_provider_catalog(provider: str, model_id: str) -> bool:
 
 
 def list_agentic_models(provider: str, *, allow_network: bool = True) -> list[str]:
-    """Model IDs suitable for agentic use: tool_call=True, minus hidden and noise models. [] on any
+    """Model IDs suitable for agentic use: tool_call=True, context window at least
+    MINIMUM_CONTEXT_LENGTH when the catalog reports one, minus hidden and noise models. [] on any
     failure. ``allow_network`` defaults to True (called from interactive model selection)."""
+    from agent.model_metadata import MINIMUM_CONTEXT_LENGTH
+
     models = _get_provider_models(provider, allow_network=allow_network)
     return [
         mid for mid, entry in models.items()
         if isinstance(entry, dict) and not _should_hide_from_provider_catalog(provider, mid) and entry.get("tool_call", False) and not _NOISE_PATTERNS.search(mid)
+        and ((_extract_limit(entry, "context") or 0) >= MINIMUM_CONTEXT_LENGTH or _extract_limit(entry, "context") is None)
     ] if models is not None else []
 
 
