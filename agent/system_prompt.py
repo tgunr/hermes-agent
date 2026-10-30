@@ -801,10 +801,18 @@ def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) 
     return {"stable": _join_tier(stable_parts), "context": _join_tier(context_parts), "volatile": _join_tier(volatile_parts)}
 
 
+def _is_apple_foundation_model(agent: Any) -> bool:
+    """Apple Foundation Models (fm serve) have a ~128-256 token context window; use a minimal prompt."""
+    base_url = getattr(agent, "base_url", None) or ""
+    return "localhost:8001" in base_url or "127.0.0.1:8001" in base_url
+
+
 def build_system_prompt(agent: Any, system_message: Optional[str] = None) -> str:
     """Assemble the full prompt; cached on ``agent._cached_system_prompt`` and
     only rebuilt after compression.  Tiers are ordered stable -> context ->
     volatile so implicit longest-prefix caches keep the unchanged scaffold."""
+    if _is_apple_foundation_model(agent):
+        return "You are a helpful assistant."
     parts = build_system_prompt_parts(agent, system_message=system_message)
     agent._cached_system_prompt_static = parts["stable"]
     # Surface context-file truncation warnings in chat, not only in logs.

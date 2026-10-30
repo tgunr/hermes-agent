@@ -279,6 +279,15 @@ def _profile_replays_tool_call_signatures(provider: Any) -> bool:
     return profile is not None and profile.name == name and profile.replays_tool_call_signatures
 
 
+def _is_apple_foundation_model(base_url: Any) -> bool:
+    """Apple Foundation Model endpoints (``fm serve`` on macOS, localhost:8001).
+
+    fm serve rejects reasoning_effort / extra_body.reasoning with HTTP 400.
+    """
+    normalized = str(base_url or "").strip().rstrip("/").lower()
+    return "localhost:8001" in normalized or "127.0.0.1:8001" in normalized
+
+
 def _model_consumes_thought_signature(model: Any, base_url: Any = None, provider: Any = None) -> bool:
     """True for Gemini routes, which require tool-call ``extra_content`` (thought_signature) replay.
 
@@ -615,7 +624,7 @@ class ChatCompletionsTransport(ProviderTransport):
         if is_kimi:
             extra_body["thinking"] = {"type": "disabled" if thinking_off else "enabled"}
 
-        if supports_reasoning:
+        if supports_reasoning and not _is_apple_foundation_model(base_url):
             # An endpoint claimed by a profile (providers.profile_for_host) takes its verbatim payload.
             if params.get("profile_endpoint", False):
                 if params.get("endpoint_reasoning") is not None:

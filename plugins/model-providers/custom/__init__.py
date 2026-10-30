@@ -10,6 +10,11 @@ from providers.base import ProviderProfile
 from utils import base_url_host_matches
 
 
+def _is_apple_foundation_model(base_url: str | None) -> bool:
+    normalized = str(base_url or "").strip().rstrip("/").lower()
+    return "localhost:8001" in normalized or "127.0.0.1:8001" in normalized
+
+
 def _looks_like_ollama_endpoint(base_url: str | None) -> bool:
     """True only for explicit Ollama signatures (port 11434 or an ``ollama`` host label).
     ``think`` is Ollama-native; strict hosts (Mistral, Groq) 422 on it, and
@@ -68,7 +73,7 @@ class CustomProfile(ProviderProfile):
         # the main loop after the route rejected the reasoning field — an unset main
         # effort arrives here already filled by default_reasoning_config). Never emit
         # think=True (Ollama-only flag).
-        if reasoning_config and isinstance(reasoning_config, dict):
+        if reasoning_config and isinstance(reasoning_config, dict) and not _is_apple_foundation_model(ctx.get("base_url")):
             effort = (reasoning_config.get("effort") or "").strip().lower()
             if effort == "none" or reasoning_config.get("enabled", True) is False:
                 # See #14820.
