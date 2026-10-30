@@ -230,6 +230,8 @@ class GatewayInboundHooksMixin:
                 exec_cmd = qcmd.get("command", "")
                 if not exec_cmd:
                     return True, t("gateway.quick_command.no_command", command=command), command
+                from hermes_cli.quick_commands import substitute_quick_command_args
+                exec_cmd = substitute_quick_command_args(exec_cmd, event.get_command_args().strip())
                 return True, await self._hm_run_exec_quick_command(command, exec_cmd), command
             if qtype != "alias":
                 return True, t("gateway.quick_command.unsupported_type", command=command), command

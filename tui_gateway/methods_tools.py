@@ -481,7 +481,8 @@ def _dispatch_quick(rid, params, session, name, arg):
     if qc.get("type") == "exec":
         # Sanitized env: the TUI server process holds every API key in os.environ.
         env = _tools_mod("tools.environments.local").build_subprocess_env()
-        r = subprocess.run(qc.get("command", ""), shell=True, env=env, **_capture_run_kwargs(30))
+        cmd = _tools_mod("hermes_cli.quick_commands").substitute_quick_command_args(qc.get("command", ""), arg)
+        r = subprocess.run(cmd, shell=True, env=env, **_capture_run_kwargs(30))
         output = _joined_output(r)[:4000]
         output = _tools_mod("agent.redact").redact_sensitive_text(output) if output else output
         if r.returncode != 0:

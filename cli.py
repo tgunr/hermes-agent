@@ -1247,6 +1247,8 @@ class HermesCLI(CLIInitMixin, CLITuiRuntimeMixin, CLIProcessNotificationsMixin, 
         if not exec_cmd:
             self._console_print(f"[bold red]{_t('cli.quick.no_command', command=base_cmd)}[/]")
             return True
+        from hermes_cli.quick_commands import substitute_quick_command_args
+        exec_cmd = substitute_quick_command_args(exec_cmd, user_args)
         try:
             # shell=True is intentional (user-authored config snippets, never LLM controlled);
             # the env is sanitized because this process holds every API key.
