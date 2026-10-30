@@ -144,3 +144,20 @@ def test_per_profile_isolation(tmp_path):
         b.close()
 
 
+
+
+def test_discovered_repos_are_scoped_per_profile(conn):
+    pdb.record_discovered_repos(conn, [("/repos/alpha", None)], profile="work")
+    pdb.record_discovered_repos(conn, [("/repos/beta", None)], profile="home")
+
+    assert [r["root"] for r in pdb.list_discovered_repos(conn, profile="work")] == ["/repos/alpha"]
+    assert [r["root"] for r in pdb.list_discovered_repos(conn, profile="home")] == ["/repos/beta"]
+
+
+def test_replace_scan_only_clears_its_own_profile(conn):
+    pdb.record_discovered_repos(conn, [("/repos/alpha", None)], profile="work")
+    pdb.record_discovered_repos(conn, [("/repos/beta", None)], profile="home")
+    pdb.record_discovered_repos(conn, [("/repos/gamma", None)], replace=True, profile="work")
+
+    assert [r["root"] for r in pdb.list_discovered_repos(conn, profile="work")] == ["/repos/gamma"]
+    assert [r["root"] for r in pdb.list_discovered_repos(conn, profile="home")] == ["/repos/beta"]

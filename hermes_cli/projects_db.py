@@ -62,7 +62,8 @@ CREATE TABLE IF NOT EXISTS project_meta (
 CREATE TABLE IF NOT EXISTS discovered_repos (
     root          TEXT PRIMARY KEY,
     label         TEXT,
-    last_seen     INTEGER NOT NULL
+    last_seen     INTEGER NOT NULL,
+    profile       TEXT NOT NULL DEFAULT 'default'
 );
 """
 
@@ -128,6 +129,7 @@ def connect(db_path: Optional[Path] = None) -> sqlite3.Connection:
         for col in _OPTIONAL_PROJECT_COLUMNS:
             if col not in cols:
                 _add_column_if_missing(conn, "projects", col, f"{col} TEXT")
+        _add_column_if_missing(conn, "discovered_repos", "profile", "TEXT NOT NULL DEFAULT 'default'")
         _INITIALIZED_PATHS.add(resolved)
 
     return open_db(path, db_label="projects.db", foreign_keys=True, initialize=_initialize)
@@ -429,34 +431,50 @@ def clear_discovered_repos(conn: sqlite3.Connection, *, policy_key: Optional[str
         _clear_repos_locked(conn, True, policy_key)
 
 
+def _active_profile() -> str:
+    """The current profile name; scopes ``discovered_repos`` rows."""
+    try:
+        from hermes_cli.profiles import get_active_profile_name
+        return get_active_profile_name() or "default"
+    except Exception:
+        return "default"
+
+
 def record_discovered_repos(
     conn: sqlite3.Connection, repos: Iterable[tuple[str, Optional[str]]], *, replace: bool = False,
-    policy_key: Optional[str] = None,
+    policy_key: Optional[str] = None, profile: Optional[str] = None,
 ) -> int:
-    """Persist scanned ``(root, label)`` repo roots (normalized; label falls back to basename) and
-    return the row count. ``replace`` = authoritative fresh scan: stale rows are deleted first so old
-    eval/worktree noise doesn't live forever."""
+    """Persist scanned ``(root, label)`` repo roots (normalized; label falls back to basename) for
+    ``profile`` (default: active) and return the row count. ``replace`` = authoritative fresh scan:
+    that profile's stale rows are deleted first so old eval/worktree noise doesn't live forever."""
+    if profile is None:
+        profile = _active_profile()
     now = _now()
     rows = [
-        (norm, label or os.path.basename(norm) or norm, now)
+        (norm, label or os.path.basename(norm) or norm, now, profile)
         for norm, label in ((_normalize_path(root), label) for root, label in repos) if norm
     ]
     with write_txn(conn):
         if replace:
-            conn.execute("DELETE FROM discovered_repos")
+            conn.execute("DELETE FROM discovered_repos WHERE profile = ?", (profile,))
         if rows:
             conn.executemany(
-                "INSERT INTO discovered_repos (root, label, last_seen) VALUES (?, ?, ?) "
-                "ON CONFLICT(root) DO UPDATE SET label = excluded.label, last_seen = excluded.last_seen",
+                "INSERT INTO discovered_repos (root, label, last_seen, profile) VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(root) DO UPDATE SET label = excluded.label, last_seen = excluded.last_seen, "
+                "profile = excluded.profile",
                 rows,
             )
         _clear_repos_locked(conn, False, policy_key)
     return len(rows)
 
 
-def list_discovered_repos(conn: sqlite3.Connection) -> list[dict]:
-    """All cached discovered repo roots, most-recently-seen first."""
-    return [dict(r) for r in conn.execute("SELECT root, label, last_seen FROM discovered_repos ORDER BY last_seen DESC").fetchall()]
+def list_discovered_repos(conn: sqlite3.Connection, *, profile: Optional[str] = None) -> list[dict]:
+    """Cached discovered repo roots for ``profile`` (default: active), most-recently-seen first."""
+    use_profile = profile if profile is not None else _active_profile()
+    return [dict(r) for r in conn.execute(
+        "SELECT root, label, last_seen FROM discovered_repos WHERE profile = ? ORDER BY last_seen DESC",
+        (use_profile,),
+    ).fetchall()]
 
 
 def project_for_path(conn: sqlite3.Connection, path: str, *, include_archived: bool = False) -> Optional[Project]:
