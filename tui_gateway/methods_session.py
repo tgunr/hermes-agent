@@ -1135,6 +1135,61 @@ def _(rid, params: dict) -> dict:
     return _ok(rid, {"cwd": target_cwd, "branch": branch, "git_repo_root": root})
 
 
+@method("session.profile.move")
+def _(rid, params: dict) -> dict:
+    """Move a STORED session to another profile's ``state.db`` — the profile-side twin of
+    ``session.workspace.move``.
+
+    Built on the existing adoption primitive (``SessionDB.adopt_session_lineage_from``): the whole
+    compression lineage is exported from the source store (every row, compaction-archived turns
+    included) and imported into the target store, and the source rows are then ARCHIVED with
+    ``end_reason='adopted_by_profile'`` — never deleted, so an accidental move stays recoverable in
+    the source profile's Archived view. A live runtime bound to the session is torn down first:
+    leaving it attached would keep writing turns into the store the row just left.
+    """
+    if not (target := _str_param(params, "session_key")):
+        return _err(rid, 4007, "session_key required")
+    if not (to_profile := _str_param(params, "to_profile")):
+        return _err(rid, 4006, "to_profile required")
+
+    with _sessions_lock:  # snapshot: concurrent RPCs mutate _sessions
+        live_sid, live = next(
+            ((sid, sess) for sid, sess in list(_sessions.items()) if sess.get("session_key") == target), ("", None))
+    if live is not None and live.get("running"):
+        return _err(rid, 4009, "session busy")
+
+    source_home = _profile_home(_str_param(params, "profile") or None) or Path(_hermes_home)
+    target_home = _profile_home(to_profile) or Path(_hermes_home)
+    if source_home.resolve() == target_home.resolve():
+        return _err(rid, 4000, f"session already belongs to profile '{to_profile}'")
+
+    source_profile = _str_param(params, "profile")
+    with _profile_db({"profile": source_profile} if source_profile else {}, writer=True) as src_db, \
+            _profile_db({"profile": to_profile}, writer=True) as dst_db:
+        if src_db is None or dst_db is None:
+            return _db_unavailable_error(rid, code=5007)
+        if src_db.get_session(target) is None:
+            return _err(rid, 4007, "session not found")
+        # Idempotence would silently import nothing and then retire the source, so refuse by name.
+        if dst_db.get_session(target) is not None:
+            return _err(rid, 4000, f"session already exists in profile '{to_profile}'")
+        try:
+            result = dst_db.adopt_session_lineage_from(src_db, target, retire_donor=True)
+        except Exception as e:
+            return _err(rid, 5007, f"move failed: {e}")
+    if not result.get("adopted"):
+        return _err(rid, 5007, f"move failed: {result.get('errors') or result.get('error') or 'nothing imported'}")
+
+    # The row now lives in the target store only; drop the runtime that was bound to the source one.
+    if live is not None:
+        with _session_resume_lock:
+            popped = _pop_session_by_id(live_sid)
+        if popped is not None:
+            _teardown_popped_session(popped, end_reason="profile_move")
+    return _ok(rid, {"session_key": target, "profile": to_profile,
+                     "donor_retired": bool(result.get("donor_retired"))})
+
+
 @method("session.active_list")
 def _(rid, params: dict) -> dict:
     """Live TUI sessions in this process (not a DB browser)."""

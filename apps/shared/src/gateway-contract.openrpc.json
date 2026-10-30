@@ -3517,6 +3517,24 @@
       }
     },
     {
+      "name": "session.profile.move",
+      "summary": "Move a stored session (whole compression lineage) into another profile's store; source rows are archived.",
+      "params": [
+        {
+          "name": "params",
+          "schema": {
+            "$ref": "#/components/schemas/SessionProfileMoveParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/SessionProfileMoveResult"
+        }
+      }
+    },
+    {
       "name": "session.redirect",
       "summary": "Redirect the active turn (queued for the next turn while the agent is still building).",
       "params": [
@@ -38100,6 +38118,62 @@
           "session_id"
         ],
         "title": "SessionParams",
+        "type": "object"
+      },
+      "SessionProfileMoveParams": {
+        "additionalProperties": false,
+        "description": "``session_key`` is the stored session id; ``to_profile`` names the destination profile on this\nhost. ``profile`` (from ``ProfileParams``) is the SOURCE profile \u2014 omitted means the launch one.",
+        "properties": {
+          "profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Profile"
+          },
+          "session_key": {
+            "title": "Session Key",
+            "type": "string"
+          },
+          "to_profile": {
+            "title": "To Profile",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_key",
+          "to_profile"
+        ],
+        "title": "SessionProfileMoveParams",
+        "type": "object"
+      },
+      "SessionProfileMoveResult": {
+        "additionalProperties": false,
+        "properties": {
+          "session_key": {
+            "title": "Session Key",
+            "type": "string"
+          },
+          "profile": {
+            "title": "Profile",
+            "type": "string"
+          },
+          "donor_retired": {
+            "default": false,
+            "title": "Donor Retired",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "session_key",
+          "profile"
+        ],
+        "title": "SessionProfileMoveResult",
         "type": "object"
       },
       "SessionPruneParams": {

@@ -826,6 +826,38 @@ export async function moveSessionToProject(
   void refreshProjectTree()
 }
 
+export interface ProfileMovePayload {
+  donor_retired: boolean
+  profile: string
+  session_key: string
+}
+
+// Move a stored session into ANOTHER profile — the profile-side twin of
+// moveSessionToProject. The backend carries the whole compression lineage and
+// archives the source rows (never deletes), so the row leaves this profile's
+// lists but stays recoverable in its Archived view. Here we drop it from the
+// `$sessions` cache so the row disappears without waiting for the next
+// authoritative refresh.
+export async function moveSessionToProfile(
+  sessionId: string,
+  toProfile: string,
+  fromProfile?: null | string
+): Promise<ProfileMovePayload> {
+  const res = await gatewayRequest<ProfileMovePayload>('session.profile.move', {
+    session_key: sessionId,
+    to_profile: toProfile,
+    ...(fromProfile ? { profile: fromProfile } : {})
+  }).catch((err: unknown) => {
+    const reason = (err as { data?: { reason?: string } })?.data?.reason
+    throw reason === 'session_busy' ? new Error(translateNow('sidebar.projects.moveBusy')) : err
+  })
+
+  setSessions(prev => prev.filter(s => !sessionMatchesStoredId(s, sessionId)))
+  void refreshProjectTree()
+
+  return res
+}
+
 export interface RepoDiscoveryPolicy {
   enabled: boolean
   roots: string[]

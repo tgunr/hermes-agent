@@ -86,8 +86,11 @@ vi.mock('@/i18n', () => ({
           home: 'Home',
           menuAppearance: 'Appearance',
           moveFailed: 'Could not move session',
+          moveNoProfiles: 'No other profiles',
           moveNoProjects: 'No other projects',
           movedTo: (name: string) => `Moved to ${name}`,
+          movedToProfile: (name: string) => `Moved to ${name}`,
+          moveToProfile: 'Move to profile',
           moveToProject: 'Move to project',
           noColor: 'No color'
         },
