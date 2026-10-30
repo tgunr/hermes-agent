@@ -2,7 +2,8 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { atom } from 'nanostores'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { refreshProjectTree } from '@/store/projects'
+import { moveSessionToProfile, refreshProjectTree } from '@/store/projects'
+import { closeSessionTile } from '@/store/session-states'
 
 import { SessionActionsMenu, SessionContextMenu } from './session-actions-menu'
 
@@ -40,8 +41,11 @@ vi.mock('@/i18n', () => ({
         projects: {
           menuAppearance: 'Appearance',
           moveFailed: 'Could not move session',
+          moveNoProfiles: 'No other profiles',
           moveNoProjects: 'No other projects',
           movedTo: (name: string) => `Moved to ${name}`,
+          movedToProfile: (name: string) => `Moved to ${name}`,
+          moveToProfile: 'Move to profile',
           moveToProject: 'Move to project',
           noColor: 'No color'
         },
@@ -78,8 +82,18 @@ vi.mock('@/lib/profile-color', () => ({ PROFILE_SWATCHES: [] }))
 vi.mock('@/lib/session-export', () => ({ exportSession: vi.fn() }))
 vi.mock('@/store/gateway', () => ({ activeGateway: vi.fn(() => null) }))
 vi.mock('@/store/notifications', () => ({ notify: vi.fn(), notifyError: vi.fn() }))
+vi.mock('@/store/profile', () => ({
+  $profiles: atom<{ display_name?: string; name: string }[]>([
+    { name: 'default' },
+    { display_name: 'Work Horse', name: 'work' }
+  ]),
+  normalizeProfileKey: (name?: null | string) => (name ?? '').trim() || 'default',
+  profileLabel: (p: { display_name?: string; name: string }) => (p.display_name ?? '').trim() || p.name,
+  refreshProfiles: vi.fn(() => Promise.resolve([]))
+}))
 vi.mock('@/store/projects', () => ({
   $projectTree: atom<unknown[]>([]),
+  moveSessionToProfile: vi.fn(),
   moveSessionToProject: vi.fn(),
   projectIdForCwd: vi.fn(() => null),
   projectRootCwd: vi.fn(() => ''),
@@ -106,6 +120,7 @@ vi.mock('@/store/session-states', () => ({
   $sessionStates: atom<Record<string, unknown>>({}),
   $sessionTiles: atom<unknown[]>([]),
   closeAllOpenSessionTiles: vi.fn(),
+  closeSessionTile: vi.fn(),
   openSessionTile: vi.fn()
 }))
 vi.mock('@/store/windows', () => ({
@@ -395,5 +410,32 @@ describe('SessionActionsMenu', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: 'Move to project' }))
 
     await waitFor(() => expect(refreshProjectTree).toHaveBeenCalledTimes(1))
+  })
+
+  // "Move to profile" is the profile-side twin of the project move: the
+  // submenu lists every OTHER profile (never the session's current owner) and
+  // a pick hands the whole session to that profile's backend.
+  it('moves the session to another profile from the "Move to profile" submenu', async () => {
+    vi.mocked(moveSessionToProfile).mockResolvedValue({ donor_retired: true, profile: 'work', session_key: 's1' })
+
+    renderMenu()
+
+    const trigger = screen.getByRole('button', { name: 'Session actions' })
+    fireEvent.pointerDown(trigger, { button: 0, pointerType: 'mouse' })
+    fireEvent.pointerUp(trigger, { button: 0, pointerType: 'mouse' })
+    fireEvent.click(trigger)
+
+    await screen.findByRole('menu')
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Move to profile' }))
+
+    // The row's own profile (default here) is the one target that would be a no-op.
+    expect(await screen.findByRole('menuitem', { name: 'Work Horse' })).toBeTruthy()
+    expect(screen.queryByRole('menuitem', { name: 'default' })).toBeNull()
+
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Work Horse' }))
+
+    await waitFor(() => expect(moveSessionToProfile).toHaveBeenCalledWith('s1', 'work', undefined))
+    // The moved session's tab must go too — it would resume a row this store no longer holds.
+    await waitFor(() => expect(closeSessionTile).toHaveBeenCalledWith('s1'))
   })
 })

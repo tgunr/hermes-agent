@@ -33,9 +33,11 @@ import { PROFILE_SWATCHES } from '@/lib/profile-color'
 import { exportSession } from '@/lib/session-export'
 import { activeGateway } from '@/store/gateway'
 import { notify, notifyError } from '@/store/notifications'
+import { $profiles, normalizeProfileKey, profileLabel, refreshProfiles } from '@/store/profile'
 import {
   $projectTree,
   applyRenamedSessionTitle,
+  moveSessionToProfile,
   moveSessionToProject,
   projectIdForCwd,
   projectRootCwd,
@@ -58,6 +60,7 @@ import {
   $sessionStates,
   $sessionTiles,
   closeAllOpenSessionTiles,
+  closeSessionTile,
   requestForOwnedSession
 } from '@/store/session-states'
 import { ackStoredSessionId } from '@/store/session-unread'
@@ -252,6 +255,54 @@ function MoveToProjectItems({ kit, sessionId, profile }: { kit: MenuKit; session
           }}
         >
           {node.label}
+        </kit.Item>
+      ))}
+    </>
+  )
+}
+
+// The profile list inside the session menu's "Move to profile" submenu — the
+// profile-side twin of MoveToProjectItems. Its own component so only an OPEN
+// submenu subscribes to the stores. The session's CURRENT owner is excluded:
+// moving a chat to the profile it already lives in is a no-op the backend
+// refuses by name.
+function MoveToProfileItems({ kit, sessionId, profile }: { kit: MenuKit; sessionId: string; profile?: string }) {
+  const { t } = useI18n()
+  const p = t.sidebar.projects
+  const profiles = useStore($profiles)
+  const session = useStore($sessions).find(s => sessionMatchesStoredId(s, sessionId))
+  const ownerProfile = normalizeProfileKey(profile || session?.profile)
+  const targets = profiles.filter(node => normalizeProfileKey(node.name) !== ownerProfile)
+
+  // The list is cached lazily (and a profile created on another host since the
+  // last fetch would be missing), so re-read it whenever the submenu opens —
+  // same reasoning as MoveToProjectItems' project-tree refresh.
+  useEffect(() => {
+    void refreshProfiles()
+  }, [])
+
+  if (targets.length === 0) {
+    return <kit.Item disabled>{p.moveNoProfiles}</kit.Item>
+  }
+
+  return (
+    <>
+      {targets.map(node => (
+        <kit.Item
+          key={node.name}
+          onSelect={() => {
+            triggerHaptic('selection')
+            moveSessionToProfile(sessionId, normalizeProfileKey(node.name), profile || session?.profile)
+              .then(() => {
+                // The row now lives in the other profile: its tab here would
+                // resume a session that store no longer holds.
+                closeSessionTile(sessionId)
+                notify({ durationMs: 2_000, kind: 'success', message: p.movedToProfile(profileLabel(node)) })
+              })
+              .catch(err => notifyError(err, p.moveFailed))
+          }}
+        >
+          {profileLabel(node)}
         </kit.Item>
       ))}
     </>
@@ -583,6 +634,15 @@ function useSessionActions({
         </kit.SubTrigger>
         <kit.SubContent>
           <MoveToProjectItems kit={kit} profile={profile} sessionId={sessionId} />
+        </kit.SubContent>
+      </kit.Sub>
+      <kit.Sub>
+        <kit.SubTrigger disabled={!sessionId}>
+          <Codicon name="account" size="0.875rem" />
+          <span>{t.sidebar.projects.moveToProfile}</span>
+        </kit.SubTrigger>
+        <kit.SubContent>
+          <MoveToProfileItems kit={kit} profile={profile} sessionId={sessionId} />
         </kit.SubContent>
       </kit.Sub>
       {tabItems.length > 0 && (

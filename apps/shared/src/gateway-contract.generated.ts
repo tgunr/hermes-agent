@@ -3364,6 +3364,17 @@ export interface SessionWorkspaceMoveResult {
   branch?: string | null
   git_repo_root?: string | null
 }
+/** ``session_key`` is the stored session id; ``to_profile`` names the destination profile on this host. ``profile`` (from ``ProfileParams``) is the SOURCE profile — omitted means the launch one. */
+export interface SessionProfileMoveParams {
+  profile?: string | null
+  session_key: string
+  to_profile: string
+}
+export interface SessionProfileMoveResult {
+  session_key: string
+  profile: string
+  donor_retired?: boolean
+}
 export interface SessionCwdSetParams {
   session_id: string
   profile?: string | null
@@ -6429,6 +6440,8 @@ export interface RpcMethods {
   'session.list': { params: SessionListParams; result: SessionListResult }
   /** Most recent human-facing session; errors fold into a null session_id. */
   'session.most_recent': { params: SessionMostRecentParams; result: SessionMostRecentResult }
+  /** Move a stored session (whole compression lineage) into another profile's store; source rows are archived. */
+  'session.profile.move': { params: SessionProfileMoveParams; result: SessionProfileMoveResult }
   /** Redirect the active turn (queued for the next turn while the agent is still building). */
   'session.redirect': { params: SessionCorrectionParams; result: SessionCorrectionResult }
   /** Attach to a stored session: reuse it if live here, else lazy / deferred / cold / eager rebuild. */
@@ -6751,6 +6764,7 @@ export const RPC_METHODS = [
   'session.interrupt',
   'session.list',
   'session.most_recent',
+  'session.profile.move',
   'session.redirect',
   'session.resume',
   'session.save',

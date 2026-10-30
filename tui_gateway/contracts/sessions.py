@@ -371,6 +371,25 @@ method("session.workspace.move", params=SessionWorkspaceMoveParams, result=Sessi
        doc="Re-home a stored session's workspace; git identity is replaced and a live agent follows.")
 
 
+class SessionProfileMoveParams(ProfileParams):
+    """``session_key`` is the stored session id; ``to_profile`` names the destination profile on this
+    host. ``profile`` (from ``ProfileParams``) is the SOURCE profile — omitted means the launch one."""
+
+    session_key: str
+    to_profile: str
+
+
+class SessionProfileMoveResult(Result):
+    session_key: str
+    profile: str
+    # False when the source rows stayed unretired (divergence guard) — the move still landed.
+    donor_retired: bool = False
+
+
+method("session.profile.move", params=SessionProfileMoveParams, result=SessionProfileMoveResult,
+       doc="Move a stored session (whole compression lineage) into another profile's store; source rows are archived.")
+
+
 class SessionCwdSetParams(SessionParams):
     cwd: str
 

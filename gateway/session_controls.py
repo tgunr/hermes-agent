@@ -100,6 +100,54 @@ _PROFILE_IMPLICIT = frozenset({'session.create', 'session.list', 'session.info',
                                'approval.respond', 'clarify.respond'})
 
 
+def _profile_home_for(name: str) -> Path:
+    """Resolve a profile NAME to its HERMES_HOME directory; a name the desktop never lists (or one
+    escaping the profiles root) is a bad argument, not a server fault."""
+    from hermes_cli.profiles import get_profile_dir
+    try:
+        return Path(get_profile_dir(name))
+    except Exception as exc:  # noqa: BLE001 - any resolver refusal is the client's bad name
+        raise RuntimeStoreError('invalid_params', field='to_profile', detail=str(exc)[:120]) from exc
+
+
+def move_session_rows(source_home, target_home, session_key: str, to_profile: str) -> dict:
+    """``session.profile.move``'s file half: adopt one session's whole compression lineage into
+    ``target_home``'s state.db and retire the source rows.
+
+    Retirement ARCHIVES (``end_reason='adopted_by_profile'``) rather than deletes, so a mistaken
+    move stays recoverable in the source profile's Archived view. Synchronous SQLite: the caller
+    runs it off the event loop. Refusals are ``RuntimeStoreError``s, never half-applied states —
+    the adopt primitive is a single transaction per store."""
+    from hermes_state import SessionDB
+    source_path = Path(source_home) / 'state.db'
+    target_path = Path(target_home) / 'state.db'
+    # A profile the desktop lists may never have run a turn (no state.db yet): the store is created
+    # on first open, so only a missing HOME is a refusal.
+    if not Path(target_home).is_dir():
+        raise RuntimeStoreError('not_found', field='to_profile', detail='unknown profile')
+    # Explicit try/finally, not ``with``: ``SessionDB.__exit__`` is typed ``-> bool``, so a ``with``
+    # body reads to a type checker as fall-through-able and the declared return type stops proving.
+    source, target = SessionDB(source_path), SessionDB(target_path)
+    try:
+        if source.get_session(session_key) is None:
+            raise RuntimeStoreError('not_found', field='session_key')
+        # The adopt primitive is idempotent by design (a recovery may retry); a MOVE must not be,
+        # or a second click would import nothing and then retire the source row for no reason.
+        if target.get_session(session_key) is not None:
+            raise RuntimeStoreError('admission_conflict', field='session_key',
+                                    detail='session already exists in the target profile')
+        adopted = target.adopt_session_lineage_from(source, session_key, retire_donor=True)
+        if not adopted.get('adopted'):
+            raise RuntimeStoreError(
+                'storage_unavailable',
+                detail=str(adopted.get('errors') or adopted.get('error') or 'nothing imported')[:160])
+        return {'session_key': session_key, 'profile': to_profile,
+                'donor_retired': bool(adopted.get('donor_retired'))}
+    finally:
+        source.close()
+        target.close()
+
+
 def display_projection(history, profile_home):
     """Main's TUI display rows for a snapshot's stored rows: the sidecar's own
     ``_history_to_messages`` (compaction handoffs stripped, ``/steer`` unwrapped, tool rows
@@ -235,6 +283,7 @@ class AuthorityConnection:
                     'prompt.receipt': self.receipt, 'prompt.cancel': self.cancel,
                     'prompt.resolve_unknown': self.resolve_unknown,
                     'session.interrupt': self.interrupt, 'session.events.since': self.events_since,
+                    'session.profile.move': self.profile_move,
                     'approval.respond': self.respond, 'clarify.respond': self.respond_clarify}
         from gateway.session_busy_controls import handlers as busy_handlers
         handlers.update(busy_handlers(self))
@@ -734,6 +783,30 @@ class AuthorityConnection:
         (self.handed_back.discard if end_reason else self.handed_back.add)(session_id)
         result['detached'] = True
         return result
+
+    async def profile_move(self, ref, params):
+        """``session.profile.move``: hand one STORED session to another profile's store.
+
+        Served here, not by the legacy sidecar: these are the rows this authority owns, and the
+        move's source half retires them. A session with a live runtime is refused — its agent
+        would keep appending to the store the row just left."""
+        if 'session:control' not in (self.actor.capabilities or ()):
+            raise RuntimeStoreError('permission_denied')
+        session_key = params.get('session_key')
+        to_profile = params.get('to_profile')
+        if not isinstance(session_key, str) or not session_key:
+            raise RuntimeStoreError('invalid_params', field='session_key')
+        if not isinstance(to_profile, str) or not to_profile:
+            raise RuntimeStoreError('invalid_params', field='to_profile')
+        target_home = _profile_home_for(to_profile)
+        source_home = Path(str(self.authority.profile_id))
+        if target_home.resolve() == source_home.resolve():
+            raise RuntimeStoreError('invalid_params', field='to_profile',
+                                    detail='session already belongs to that profile')
+        if session_key in getattr(self.authority, 'sessions', {}):
+            raise RuntimeStoreError('session_busy', field='session_key')
+        target_name = profile_name_for_home(target_home) or to_profile
+        return await asyncio.to_thread(move_session_rows, source_home, target_home, session_key, target_name)
 
     async def events_since(self, ref, params):
         self.authority.authorize(self.actor, ref, 'session:read')

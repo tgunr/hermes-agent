@@ -34,6 +34,9 @@ export interface SidebarProjectsTranslations {
   moveNoFolder: string
   moveBusy: string
   moveNoProjects: string
+  moveToProfile: string
+  movedToProfile: (name: string) => string
+  moveNoProfiles: string
   reveal: string
   copyPath: string
   removeFromSidebar: string
