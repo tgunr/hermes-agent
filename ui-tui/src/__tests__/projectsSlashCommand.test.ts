@@ -298,5 +298,7 @@ describe('/projects command', () => {
 
     expect(sys.mock.calls[0]![0]).toContain('session busy')
     expect(sys.mock.calls[0]![0]).not.toContain('answers none of')
+    // A backend that ANSWERS the local verbs is not re-asked through the owner's mutation.
+    expect(request).not.toHaveBeenCalledWith('session.mutate', expect.anything())
   })
 })

@@ -114,13 +114,17 @@ export async function moveSessionInto(gw: GatewayClient, project: ProjectInfo, s
     }
   }
 
-  try {
-    const mutation = await mutateCanonical(gw, sid, 'workspace', { cwd: path })
-    const cwd = asRpcResult(mutation?.result)?.cwd
+  // Only reach for the owner's verb when the local ones were MISSING (not refused): a backend that
+  // answers them has already said what it thinks, and a real refusal is authoritative there.
+  if (refusals.length && refusals.every(missingVerb)) {
+    try {
+      const mutation = await mutateCanonical(gw, sid, 'workspace', { cwd: path })
+      const cwd = asRpcResult(mutation?.result)?.cwd
 
-    return typeof cwd === 'string' && cwd ? cwd : path
-  } catch (e: unknown) {
-    refusals.push(wireText(e))
+      return typeof cwd === 'string' && cwd ? cwd : path
+    } catch (e: unknown) {
+      refusals.push(wireText(e))
+    }
   }
 
   // A real refusal ("session busy", a read-only mount, an unresolvable cwd) explains more than the
