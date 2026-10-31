@@ -59,6 +59,7 @@ import {
   $sidebarStatusFilter,
   $sidebarWorkspaceOrderIds,
   $sidebarWorkspaceParentOrderIds,
+  clearSidebarFilters,
   filterVisibleProjects,
   pinSession,
   SESSION_SEARCH_FOCUS_EVENT,
@@ -1815,13 +1816,25 @@ export function ChatSidebar({
                     <SidebarLoadErrorState onRetry={() => void onRetrySessions()} />
                   ) : (
                     <div className="grid min-h-16 place-items-center rounded-lg px-2 text-center text-xs text-(--ui-text-tertiary)">
-                      {inProject
-                        ? s.projectEmpty
-                        : filtersActive
-                          ? s.noFilterMatches
-                          : pinnedSessions.length > 0
-                            ? s.allPinned
-                            : s.noSessions}
+                      {inProject ? (
+                        s.projectEmpty
+                      ) : filtersActive ? (
+                        <span className="flex flex-col items-center gap-1.5">
+                          {s.noFilterMatches}
+                          <Button
+                            onClick={() => clearSidebarFilters()}
+                            size="xs"
+                            type="button"
+                            variant="text"
+                          >
+                            {s.clearFilters}
+                          </Button>
+                        </span>
+                      ) : pinnedSessions.length > 0 ? (
+                        s.allPinned
+                      ) : (
+                        s.noSessions
+                      )}
                     </div>
                   )
                 }

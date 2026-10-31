@@ -925,7 +925,7 @@ export function toggleSidebarPrFilter(bucket: PullRequestBucket) {
   toggleIn($sidebarPrFilter, bucket)
 }
 
-function clearSidebarFilters() {
+export function clearSidebarFilters() {
   $sidebarStatusFilter.set([])
   $sidebarProjectFilter.set([])
   $sidebarProfileFilter.set([])

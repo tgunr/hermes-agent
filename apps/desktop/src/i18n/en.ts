@@ -3217,6 +3217,7 @@ export const en: Translations = {
       guide: 'Recovery guide'
     },
     noFilterMatches: 'No sessions match these filters',
+    clearFilters: 'Clear filters',
     projects: enProjects,
     newSessionIn: label => `New session in ${label}`,
     showMoreIn: (count, label) => `Show ${count} more in ${label}`,

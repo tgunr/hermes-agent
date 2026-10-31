@@ -2823,6 +2823,7 @@ export interface Translations extends NoticeTranslations {
       guide: string
     }
     noFilterMatches: string
+    clearFilters: string
     projects: SidebarProjectsTranslations
     newSessionIn: (label: string) => string
     showMoreIn: (count: number, label: string) => string
