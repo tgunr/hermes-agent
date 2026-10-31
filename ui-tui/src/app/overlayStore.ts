@@ -11,7 +11,9 @@ export function capturePromptResponseGuard<K extends 'approval' | 'clarify' | 's
   const destination = captureDestination()
   const info = $uiState.get().info
 
-  return () => Boolean(prompt) && isCurrentDestination(destination) &&
+  return () =>
+    Boolean(prompt) &&
+    isCurrentDestination(destination) &&
     $uiState.get().info?.execution_epoch === info?.execution_epoch &&
     $uiState.get().info?.execution_generation === info?.execution_generation &&
     $overlayState.get()[key] === prompt
@@ -32,6 +34,7 @@ const buildOverlayState = (): OverlayState => ({
   modelPicker: false,
   pager: null,
   petPicker: false,
+  projectsPicker: false,
   pluginsHub: false,
   secret: null,
   vaultCode: null,
@@ -57,6 +60,7 @@ const BLOCKING_KEYS = [
   'journey',
   'modelPicker',
   'pager',
+  'projectsPicker',
   'petPicker',
   'pluginsHub',
   'secret',
@@ -130,6 +134,7 @@ export const hasFloatingPanel = (overlay: OverlayState): boolean =>
     overlay.pager ||
     overlay.petPicker ||
     overlay.pluginsHub ||
+    overlay.projectsPicker ||
     overlay.sessions ||
     overlay.skillsHub
   )

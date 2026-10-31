@@ -387,7 +387,10 @@ _SLACK_VIA_HERMES_ONLY = frozenset({
     # Recovery-only, after a restart lost a turn: `/hermes discard` reaches it.
     "discard",
     # One-time answer to the low-disk prompt; `/hermes autoprune on` reaches it.
-    "autoprune"})
+    "autoprune",
+    # Session-folder switching is meaningless in a chat that froze its workspace at launch;
+    # Telegram still offers it natively, Slack reaches it via `/hermes projects`.
+    "projects"})
 
 
 def _sanitize_slack_name(raw: str) -> str:

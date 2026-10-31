@@ -892,6 +892,42 @@ class GatewaySessionCommandsMixin:
 
     # ------------------------------------------------------------------ /save, /title
 
+    async def _handle_projects_command(self, event: MessageEvent) -> str:
+        """Handle /projects — list this profile's Projects, and select the active one.
+
+        Every surface can list, and listing is the whole job on a chat surface: a gateway session's
+        working folder is frozen into its launch policy, so moving it belongs to the surface that
+        owns that folder (the CLI process, the TUI/Desktop workspace RPC, the Desktop sidebar).
+        Saying so is better than a switch that silently changes nothing.
+        """
+        from hermes_cli import projects_db as pdb
+        from hermes_cli import projects_switch as ps
+
+        token = (event.get_command_args() or "").strip()
+
+        def run() -> str:
+            with pdb.connect_closing() as conn:
+                projects = pdb.list_projects(conn, include_archived=True)
+                active_id = pdb.get_active_id(conn)
+                if not token:
+                    if not projects:
+                        return ("No Projects yet — create one in the desktop sidebar, or run "
+                                "project_create from a session.")
+                    body = "\n".join(ps.lines(projects, active_id, os.getcwd()))
+                    return f"Projects ({len(projects)}):\n{body}"
+                project = ps.resolve(projects, token)
+                if project is None:
+                    return f"No Project matches {token!r} — /projects lists them."
+                path = ps.primary_path(project)
+                pdb.set_active(conn, project.id)
+            if not path or not os.path.isdir(path):
+                return (f"Active Project \u2192 {project.name}, but its folder "
+                        f"{path or '(none)'} is not available here — nothing to move into.")
+            return (f"Active Project \u2192 {project.name} ({path}). This chat's folder is fixed at "
+                    "launch: run /projects in the TUI or Desktop to move a live session there.")
+
+        return await asyncio.to_thread(run)
+
     async def _handle_save_command(self, event: MessageEvent) -> str:
         """Handle /save — export the current session and send it as a document."""
         import tempfile

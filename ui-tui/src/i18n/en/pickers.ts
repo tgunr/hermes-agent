@@ -166,6 +166,22 @@ export const pickersEn = {
         refresh: ' refresh · '
       }
     },
+    projects: {
+      title: 'Projects',
+      loading: 'loading projects…',
+      moving: 'moving…',
+      // {0} = project name, {1} = the folder the session now sits in.
+      moved: (name: string, path: string) => `✓ ${name} — ${path}`,
+      countOne: '1 project',
+      countOther: (count: number) => `${count} projects`,
+      // {0} = the filter text the user typed.
+      noMatches: (query: string) => `no projects match "${query}"`,
+      none: 'no Projects yet — create one in the desktop sidebar, or ask the agent to project_create',
+      noFolder: '(no folder)',
+      noSession: 'no live session to move — send a message first, then /projects',
+      escCancelHint: 'Esc cancel',
+      hint: '↑/↓ select · Enter move session here · type to filter · Esc cancel'
+    },
     pet: {
       title: 'Pets',
       loading: 'loading pets…',

@@ -18,6 +18,7 @@ import { OverlayHint } from './overlayControls.js'
 import { listRowStyle } from './overlayPrimitives.js'
 import { PetPicker } from './petPicker.js'
 import { PluginsHub } from './pluginsHub.js'
+import { ProjectsPicker } from './projectsPicker.js'
 import { ApprovalPrompt, ClarifyPrompt, ConfirmPrompt } from './prompts.js'
 import { SkillsHub } from './skillsHub.js'
 import { SubscriptionOverlay } from './subscriptionOverlay.js'
@@ -325,6 +326,23 @@ export function FloatingOverlays({
       render: width => (
         <FloatBox color={theme.color.border}>
           <PetPicker gw={gw} maxWidth={width} onClose={() => patchOverlayState({ petPicker: false })} t={theme} />
+        </FloatBox>
+      )
+    })
+  }
+
+  if (overlay.projectsPicker) {
+    widgets.push({
+      id: 'projects-picker',
+      render: width => (
+        <FloatBox color={theme.color.border}>
+          <ProjectsPicker
+            gw={gw}
+            maxWidth={width}
+            onClose={() => patchOverlayState({ projectsPicker: false })}
+            sid={sid}
+            t={theme}
+          />
         </FloatBox>
       )
     })

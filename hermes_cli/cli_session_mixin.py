@@ -32,6 +32,11 @@ def _user_turn_indices(history: list) -> list[int]:
         if not _is_ephemeral_scaffolding(m) and user_originated_turn_view(m) is not None]
 
 
+from hermes_cli.projects_switch import lines as _project_lines
+from hermes_cli.projects_switch import primary_path as _project_primary_path
+from hermes_cli.projects_switch import resolve as _resolve_project
+
+
 def _timestamp_or(value, default):
     """``datetime.fromtimestamp(value)`` or *default* when the value is missing/unparseable."""
     from cli import datetime
@@ -1217,3 +1222,54 @@ class CLISessionMixin:
             print(t("cli.session.exit_label_title", title=session_title))
         print(t("cli.session.exit_label_duration", duration=duration_str))
         print(t("cli.session.exit_label_messages", count=msg_count, user=user_msgs, tool_calls=tool_calls))
+
+    # ---- /projects — named workspace folders (Projects) -------------------------------------
+    def _handle_projects_command(self, cmd_original: str) -> None:
+        """``/projects [name|slug|id]``: list the profile's Projects, or move this shell into one.
+
+        The TUI/Desktop client handles this locally (it owns the live session and moves it with
+        ``session.cwd.set``); this is the classic CLI REPL path, where the agent's tools run in this
+        process and follow ``os.chdir`` + ``TERMINAL_CWD``. In the TUI's slash worker the chdir only
+        moves the worker, so it says so instead of claiming a move it did not make.
+        """
+        from hermes_cli import projects_db as pdb
+
+        parts = cmd_original.split(None, 1)
+        token = parts[1].strip() if len(parts) > 1 else ""
+        try:
+            with pdb.connect_closing() as conn:
+                projects = pdb.list_projects(conn, include_archived=True)
+                if not token:
+                    if not projects:
+                        print("  no Projects yet — create one in the desktop sidebar, or ask the agent "
+                              "to project_create")
+                        return
+                    print(f"  Projects ({len(projects)}) — /projects <name|slug> moves this session:")
+                    for line in _project_lines(projects, pdb.get_active_id(conn), os.getcwd()):
+                        print(line)
+                    return
+                project = _resolve_project(projects, token)
+                if project is None:
+                    print(f"  no Project matches '{token}' — run /projects to list them")
+                    return
+                path = _project_primary_path(project)
+                if not path or not os.path.isdir(path):
+                    print(f"  Project '{project.name}' has no usable folder ({path or 'none recorded'})")
+                    return
+                pdb.set_active(conn, project.id)
+        except Exception as e:  # an unreadable projects.db must not take the REPL down
+            print(f"  Projects unavailable: {e}")
+            return
+
+        if getattr(self, "is_slash_worker", False):
+            print(f"  {project.name} is active ({path}). The live session's folder is moved by the "
+                  f"TUI/Desktop client; this shell stages it for /new.")
+            return
+        try:
+            os.chdir(path)
+        except OSError as e:
+            print(f"  could not enter {path}: {e}")
+            return
+        # Local tools and child processes anchor on TERMINAL_CWD, not this process's cwd.
+        os.environ["TERMINAL_CWD"] = path
+        print(f"  ✓ {project.name} — {path}")
