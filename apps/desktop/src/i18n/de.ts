@@ -4577,6 +4577,9 @@ export const deOverrides = {
       toggleVersion: 'Version & Updates',
       toggleFreeTier: 'Gratis-Tarif',
       toggleWorkspace: 'Workspace',
+      projects: 'Projekte',
+      toggleProjects: 'Projekte',
+      allProjects: 'Alle Projekte',
       cacheHitRateTitle:
         'Prompt-Cache-Trefferquote dieser Session — gecachte Tokens kosten weniger, also ist höher günstiger',
       tokensPerSecondTitle: 'Ausgabe-Tokens pro Sekunde, gemittelt über die letzten 10 Modell-Aufrufe',

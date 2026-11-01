@@ -153,6 +153,27 @@ def test_get_unknown_returns_error():
     assert "error" in resp
 
 
+def test_archive_clears_the_active_pointer(tmp_path):
+    """Archiving the ACTIVE project must clear the pointer in the same write.
+
+    The desktop hides an archived row, so a pointer left aimed at it dangles —
+    the sidebar paints no active project while the backend keeps judging new
+    sessions against one. Restore is deliberately NOT symmetric: an archived
+    project comes back inactive and the user re-activates it explicitly.
+    """
+    pid = _call("projects.create", {"name": "Active", "folders": [str(tmp_path)]})["project"]["id"]
+    _call("projects.set_active", {"id": pid})
+    assert _call("projects.list")["active_id"] == pid
+
+    archived = _call("projects.archive", {"id": pid})
+    assert archived["active_id"] is None
+    assert all(p["archived"] for p in archived["projects"] if p["id"] == pid)
+
+    restored = _call("projects.archive", {"id": pid, "restore": True})
+    assert restored["active_id"] is None
+    assert any(p["id"] == pid and not p["archived"] for p in restored["projects"])
+
+
 def test_delete_removes_project(tmp_path):
     pid = _call("projects.create", {"name": "Doomed", "folders": [str(tmp_path)]})["project"]["id"]
     payload = _call("projects.delete", {"id": pid})

@@ -4,6 +4,7 @@ import { isValidElement, type ReactNode } from 'react'
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { SidebarProjectTree } from '@/app/chat/sidebar/projects/workspace-groups'
 import { group } from '@/components/pane-shell/tree/model'
 import { $layoutTree, noteActiveTreeGroup } from '@/components/pane-shell/tree/store'
 import { en } from '@/i18n/en'
@@ -13,6 +14,8 @@ import { usageContextLabel } from '@/lib/statusbar'
 import { $freeTierStatus } from '@/store/free-tier'
 import { INTERFACE_MODES, setInterfaceMode } from '@/store/interface-mode'
 import { markOnboardingDecided, setOnboardingSurfaceActive } from '@/store/onboarding-presence'
+import { $projectScope, ALL_PROJECTS } from '@/store/project-scope'
+import { $activeProjectId, $projectTree } from '@/store/projects'
 import {
   $connection,
   $currentCwd,
@@ -535,5 +538,68 @@ describe('context meter beside an agentless breakdown', () => {
     const item = await contextItem({ calls: 0, input: 0, output: 0, total: 0 })
 
     expect(item?.label).not.toBe(usageContextLabel(measured))
+  })
+})
+
+describe('projects picker', () => {
+  const tree = [
+    { id: '__no_project__', isNoProject: true, label: 'Home', repos: [] },
+    { id: 'p_web', isNoProject: false, label: 'WebSite', repos: [] },
+    { id: 'p_factor', isNoProject: false, label: 'Factor', repos: [] }
+  ] as unknown as SidebarProjectTree[]
+
+  const projectsItem = () =>
+    renderStatusbarItems().leftStatusbarItems.find(item => item.id === 'projects')
+
+  beforeEach(() => {
+    focusPane(null)
+    $projectScope.set(ALL_PROJECTS)
+    $activeProjectId.set(null)
+    $projectTree.set([])
+  })
+
+  afterEach(() => {
+    $projectTree.set([])
+    $activeProjectId.set(null)
+    $projectScope.set(ALL_PROJECTS)
+  })
+
+  it('stays out of the bar while the tree is empty', () => {
+    expect(projectsItem()?.hidden).toBe(true)
+  })
+
+  it('names the durable active project once the tree arrives', () => {
+    $projectTree.set(tree)
+    $activeProjectId.set('p_factor')
+
+    const item = projectsItem()
+    expect(item?.label).toBe('Factor')
+    expect(item?.menuItems?.map(row => row.label)).toEqual(['Home', 'WebSite', 'Factor'])
+  })
+
+  it('lets the sidebar view scope outrank the active pointer', () => {
+    $projectTree.set(tree)
+    $activeProjectId.set('p_factor')
+    $projectScope.set('p_web')
+
+    expect(projectsItem()?.label).toBe('WebSite')
+  })
+
+  it('offers a way back to every project only while one is in view', () => {
+    $projectTree.set(tree)
+    expect(projectsItem()?.menuItems?.some(row => row.id === 'projects-all')).toBe(false)
+
+    $projectScope.set('p_web')
+    const all = projectsItem()?.menuItems?.find(row => row.id === 'projects-all')
+    expect(all?.label).toBe(en.shell.statusbar.allProjects)
+  })
+
+  it('enters the project a menu row picks', () => {
+    $projectTree.set(tree)
+    const row = projectsItem()?.menuItems?.find(entry => entry.id === 'projects-p_factor')
+
+    row?.onSelect?.()
+
+    expect($projectScope.get()).toBe('p_factor')
   })
 })

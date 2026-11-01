@@ -4562,6 +4562,9 @@ export const esOverrides = {
       toggleVersion: 'Versión y actualizaciones',
       toggleFreeTier: 'Plan gratuito',
       toggleWorkspace: 'Espacio de trabajo',
+      projects: 'Proyectos',
+      toggleProjects: 'Proyectos',
+      allProjects: 'Todos los proyectos',
       cacheHitRateTitle:
         'Tasa de aciertos de la caché de prompts en esta sesión: los tokens en caché cuestan menos, así que cuanto más alta, más barato',
       tokensPerSecondTitle: 'Tokens de salida por segundo, promediados en las últimas 10 llamadas al modelo',

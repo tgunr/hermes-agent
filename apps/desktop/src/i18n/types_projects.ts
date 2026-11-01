@@ -28,6 +28,9 @@ export interface SidebarProjectsTranslations {
   menuAddFolder: string
   menuSetActive: string
   menuDelete: string
+  menuArchive: string
+  archivedNotice: string
+  undoArchive: string
   moveToProject: string
   movedTo: (name: string) => string
   moveFailed: string

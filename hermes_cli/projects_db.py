@@ -362,7 +362,19 @@ def set_primary(conn: sqlite3.Connection, project_id: str, path: str) -> bool:
 
 
 def archive_project(conn: sqlite3.Connection, project_id: str) -> bool:
-    return _execute_rowcount(conn, "UPDATE projects SET archived = 1 WHERE id = ?", (project_id,)) > 0
+    """Hide a project from the sidebar without deleting it.
+
+    Archiving the ACTIVE project also clears the active pointer in the same
+    transaction: an archived project cannot be the one new sessions are born
+    into, and a dangling pointer would 5062 on the next ``project use``-less
+    launch. ``restore_project`` does not re-activate it — that stays the user's
+    explicit choice.
+    """
+    with write_txn(conn):
+        archived = conn.execute("UPDATE projects SET archived = 1 WHERE id = ?", (project_id,)).rowcount > 0
+        if archived and _get_meta(conn, _ACTIVE_META_KEY) == project_id:
+            conn.execute("DELETE FROM project_meta WHERE key = ?", (_ACTIVE_META_KEY,))
+    return archived
 
 
 def restore_project(conn: sqlite3.Connection, project_id: str) -> bool:

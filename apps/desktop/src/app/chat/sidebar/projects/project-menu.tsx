@@ -25,6 +25,7 @@ import { cn } from '@/lib/utils'
 import { $panesFlipped, dismissAutoProject, restoreAutoProject } from '@/store/layout'
 import { notify } from '@/store/notifications'
 import {
+  archiveProject,
   copyPath,
   deleteProject,
   openProjectAddFolder,
@@ -88,6 +89,31 @@ function useProjectActions({
     }
   }
 
+  // Archive (hide) — the reversible sibling of Delete. Nothing is destroyed: the
+  // project's folders, chats and board binding survive, so the toast's Undo
+  // (which writes `restore`) puts the row back exactly as it was. Only explicit
+  // projects can be archived — an auto row has no stored record to flag, and its
+  // one-way "Hide from sidebar" (dismiss + Undo) covers the same ground.
+  const archive = () => {
+    const id = project.id
+
+    if (scoped) {
+      onExitScope?.()
+    }
+
+    void archiveProject(id)
+
+    // Optimistic, like the store write above — the toast appears with the row
+    // already gone, and Undo is what makes it a one-click mistake instead of a
+    // trip to the CLI.
+    notify({
+      action: { label: p.undoArchive, onClick: () => void archiveProject(id, true) },
+      durationMs: 8_000,
+      kind: 'success',
+      message: p.archivedNotice
+    })
+  }
+
   // Rename / add folder / set active — explicit projects only (auto ones lack a
   // materialized record). Appearance is handled per-surface (popover vs submenu)
   // by the caller since its picker chrome differs.
@@ -143,6 +169,12 @@ function useProjectActions({
         variant: 'destructive'
       }
 
+  // Archive sits with the danger block (it hides the row) but is NOT destructive
+  // — no confirm dialog, one click, and the toast carries Undo.
+  const archiveItem: ActionItemSpec | null = project.isAuto
+    ? null
+    : { icon: 'archive', key: 'archive', label: p.menuArchive, onSelect: archive }
+
   const confirmDialog = (
     <ConfirmDialog
       confirmLabel={p.menuDelete}
@@ -155,7 +187,7 @@ function useProjectActions({
     />
   )
 
-  return { confirmDialog, dangerItem, identityItems, pathItems }
+  return { archiveItem, confirmDialog, dangerItem, identityItems, pathItems }
 }
 
 // Per-project actions. The kebab keeps its row-anchored Appearance popover; the
@@ -187,7 +219,7 @@ export function ProjectMenu({
   // when the panes are flipped (sidebar on the right).
   const panesFlipped = useStore($panesFlipped)
 
-  const { confirmDialog, dangerItem, identityItems, pathItems } = useProjectActions({
+  const { archiveItem, confirmDialog, dangerItem, identityItems, pathItems } = useProjectActions({
     isActive,
     onExitScope,
     project,
@@ -271,6 +303,7 @@ export function ProjectMenu({
           )}
           {pathItems.map(item => renderActionItem(DROPDOWN_KIT, item))}
           <DropdownMenuSeparator />
+          {archiveItem && renderActionItem(DROPDOWN_KIT, archiveItem)}
           {renderActionItem(DROPDOWN_KIT, dangerItem)}
         </DropdownMenuContent>
       </DropdownMenu>
@@ -315,7 +348,7 @@ export function ProjectContextMenu({
   const { t } = useI18n()
   const p = t.sidebar.projects
 
-  const { confirmDialog, dangerItem, identityItems, pathItems } = useProjectActions({
+  const { archiveItem, confirmDialog, dangerItem, identityItems, pathItems } = useProjectActions({
     isActive,
     onExitScope,
     project,
@@ -351,6 +384,7 @@ export function ProjectContextMenu({
       {(identityItems.length > 0 || canTheme) && <kit.Separator />}
       {pathItems.map(item => renderActionItem(kit, item))}
       <kit.Separator />
+      {archiveItem && renderActionItem(kit, archiveItem)}
       {renderActionItem(kit, dangerItem)}
     </>
   )

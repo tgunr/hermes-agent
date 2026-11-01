@@ -3,6 +3,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
 import { dismissAutoProject, restoreAutoProject } from '@/store/layout'
 import { notify } from '@/store/notifications'
+import { archiveProject } from '@/store/projects'
 
 import { ProjectMenu } from './project-menu'
 import type { SidebarProjectTree } from './workspace-groups'
@@ -37,6 +38,8 @@ vi.mock('@/i18n', () => ({
           menu: 'Actions',
           menuAddFolder: 'Add folder',
           menuAppearance: 'Appearance',
+          menuArchive: 'Archive',
+          archivedNotice: 'Archived — hidden from the sidebar',
           menuDelete: 'Delete',
           menuRename: 'Rename',
           menuSetActive: 'Set active',
@@ -44,6 +47,7 @@ vi.mock('@/i18n', () => ({
           hiddenFromSidebar: 'Hidden from sidebar',
           removeFromSidebar: 'Remove from sidebar',
           reveal: 'Reveal in file manager',
+          undoArchive: 'Undo',
           undoHide: 'Undo'
         }
       }
@@ -70,6 +74,7 @@ vi.mock('@/store/notifications', () => ({
 }))
 
 vi.mock('@/store/projects', () => ({
+  archiveProject: vi.fn().mockResolvedValue(undefined),
   copyPath: vi.fn(),
   deleteProject: vi.fn(),
   openProjectAddFolder: vi.fn(),
@@ -149,5 +154,38 @@ describe('ProjectMenu', () => {
     expect(restoreAutoProject).not.toHaveBeenCalled()
     input.action?.onClick()
     expect(restoreAutoProject).toHaveBeenCalledWith('/auto/repo')
+  }, 15000)
+
+  // Archiving is the reversible sibling of Delete: one click, no confirm, and
+  // the toast's Undo writes `restore` for the same id. A user who only wants the
+  // row out of the sidebar must never have to hard-delete the project to do it.
+  it('archives an explicit project with an Undo toast that restores it', async () => {
+    render(<ProjectMenu isActive={false} project={project} />)
+
+    openTriggerMenu(screen.getByRole('button', { name: 'Actions' }))
+
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Archive' }))
+
+    expect(archiveProject).toHaveBeenCalledWith('p1')
+
+    expect(notify).toHaveBeenCalledTimes(1)
+    const input = vi.mocked(notify).mock.calls[0][0]
+    expect(input.action?.label).toBe('Undo')
+
+    // Undo closes over the id (the row is already gone from the tree) and asks
+    // for the restore arm of the same RPC, never a second archive.
+    expect(archiveProject).toHaveBeenCalledTimes(1)
+    input.action?.onClick()
+    expect(archiveProject).toHaveBeenLastCalledWith('p1', true)
+  }, 15000)
+
+  // An auto-discovered row has no projects.db record to flag, so it must not
+  // offer Archive — its one-way "Hide from sidebar" (dismiss + Undo) covers it.
+  it('does not offer Archive on an auto project', async () => {
+    render(<ProjectMenu isActive={false} project={autoProject} />)
+
+    openTriggerMenu(screen.getByRole('button', { name: 'Actions' }))
+
+    expect(screen.queryByRole('menuitem', { name: 'Archive' })).toBeNull()
   }, 15000)
 })

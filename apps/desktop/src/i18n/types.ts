@@ -3609,6 +3609,11 @@ export interface Translations extends NoticeTranslations {
       toggleVersion: string
       toggleFreeTier: string
       toggleWorkspace: string
+      /** Statusbar projects picker: the bar label and its show/hide name. */
+      projects: string
+      toggleProjects: string
+      /** The picker row that leaves a project and shows every project again. */
+      allProjects: string
       cacheHitRateTitle: string
       tokensPerSecondTitle: string
       togglePlanUsage: string

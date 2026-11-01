@@ -4585,6 +4585,9 @@ export const frOverrides = {
       toggleVersion: 'Version et mises à jour',
       toggleFreeTier: 'Offre gratuite',
       toggleWorkspace: 'Espace de travail',
+      projects: 'Projets',
+      toggleProjects: 'Projets',
+      allProjects: 'Tous les projets',
       cacheHitRateTitle:
         'Taux de cache des prompts pour cette session — les tokens en cache coûtent moins cher, un taux élevé est donc plus économique',
       tokensPerSecondTitle: 'Tokens de sortie par seconde, moyenne calculée sur les 10 derniers appels au modèle',

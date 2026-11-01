@@ -50,7 +50,8 @@ import { requestGatewayForProfile } from '@/store/gateway'
 import { revealFileInTree } from '@/store/layout'
 import { $activeGatewayProfile } from '@/store/profile'
 import { $profileRailVisible } from '@/store/profile-rail-prefs'
-import { $projectTree, projectNameForCwd } from '@/store/projects'
+import { $projectScope, ALL_PROJECTS, exitProjectScope } from '@/store/project-scope'
+import { $activeProjectId, $projectTree, enterProject, projectNameForCwd } from '@/store/projects'
 import {
   $activeSessionId,
   $busy,
@@ -293,6 +294,19 @@ export function useStatusbarItems({
   // the tree changes; null (no named project) falls back to the cwd leaf below.
   const projectTree = useStore($projectTree)
   const projectName = useMemo(() => projectNameForCwd(currentCwd), [currentCwd, projectTree])
+
+  // The projects picker's "where am I": the sidebar's view scope wins (it is
+  // what the user is looking at), then the durable active pointer. Both are ids
+  // into the same tree the sidebar renders, so the bar and the tree can never
+  // disagree about the current project.
+  const activeProjectId = useStore($activeProjectId)
+  const projectScope = useStore($projectScope)
+  const currentProjectId = projectScope === ALL_PROJECTS ? activeProjectId : projectScope
+
+  const currentProject = useMemo(
+    () => projectTree.find(project => project.id === currentProjectId),
+    [currentProjectId, projectTree]
+  )
 
   const changeWorkspaceItem = useChangeWorkspaceItem(changeSessionCwd, currentCwd, busy, {
     focusedRowConnectionId,
@@ -599,6 +613,49 @@ export function useStatusbarItems({
           : undefined,
         title: currentCwd ? displayPath(currentCwd) : undefined,
         toggleLabel: copy.toggleWorkspace,
+        variant: 'menu'
+      },
+      {
+        // The statusbar's door into the sidebar's project tree: the label is
+        // always the project currently in view, and a menu row enters that
+        // project exactly like clicking it in the tree. Hidden until the tree
+        // has something to show, so a projectless profile keeps a clean bar.
+        hidden: !sessionsShowing || projectTree.length === 0,
+        icon: <Codicon name="root-folder" size="0.75rem" />,
+        id: 'projects',
+        label: currentProject?.label ?? copy.projects,
+        menuClassName: 'w-64',
+        menuItems: [
+          ...(projectScope === ALL_PROJECTS
+            ? []
+            : [
+                {
+                  id: 'projects-all',
+                  icon: <Codicon name="list-unordered" size="0.75rem" />,
+                  label: copy.allProjects,
+                  onSelect: () => exitProjectScope()
+                }
+              ]),
+          ...projectTree.map(project => ({
+            id: `projects-${project.id}`,
+            icon: (
+              <Codicon
+                name={
+                  project.id === currentProjectId
+                    ? 'check'
+                    : project.isNoProject
+                      ? 'home'
+                      : 'root-folder'
+                }
+                size="0.75rem"
+              />
+            ),
+            label: project.label,
+            onSelect: () => enterProject(project.id)
+          }))
+        ],
+        title: currentProject?.label,
+        toggleLabel: copy.toggleProjects,
         variant: 'menu'
       },
       {

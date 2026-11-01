@@ -1412,6 +1412,47 @@ export async function deleteProject(id: string): Promise<void> {
   void refreshProjectTree()
 }
 
+// Archive (hide) or restore. Archiving is the reversible cousin of
+// deleteProject: folders, chats and any kanban board binding survive, so
+// `restore` puts the row back exactly as it was. Optimistic like deleteProject
+// — the tree drops the row the instant it's clicked (an archived project is
+// excluded from the server-built tree, so the reconcile would drop it anyway),
+// and a failed write restores both caches.
+export async function archiveProject(id: string, restore = false): Promise<void> {
+  const context = await activeProjectsContext(writableProjectProfile())
+  const snap = snapshotProjects()
+  // Capture membership BEFORE removal — the tree node is gone once it's dropped.
+  const kickToIntro = !restore && openSessionBelongsToProject(id, snap.projects)
+
+  $projects.set(
+    snap.projects.map(project => (project.id === id ? { ...project, archived: !restore } : project))
+  )
+
+  if (!restore) {
+    $projectTree.set(snap.tree.filter(node => node.id !== id))
+
+    if (snap.active === id) {
+      $activeProjectId.set(null)
+    }
+
+    // The open session's project is now archived (it falls back to Recents).
+    if (kickToIntro) {
+      requestFreshSession()
+    }
+  }
+
+  await persistOrRollback(snap, async () => {
+    applyPayload(
+      await gatewayRequestOn<ProjectsPayload>(
+        context.gateway,
+        'projects.archive',
+        projectParams({ id, restore }, context.profile)
+      )
+    )
+  })
+  void refreshProjectTree()
+}
+
 export async function setActiveProject(id: null | string): Promise<void> {
   const context = await activeProjectsContext(writableProjectProfile())
 
