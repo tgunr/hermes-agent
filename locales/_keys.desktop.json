@@ -4633,6 +4633,7 @@
     "shell.statusbar.yoloOn",
     "shell.windowControls",
     "sidebar.allPinned",
+    "sidebar.clearFilters",
     "sidebar.clearSearch",
     "sidebar.cronJobs",
     "sidebar.dateDivider.lastWeek",
