@@ -195,6 +195,20 @@ class TestServedNumCtxSatisfiesTheFloor:
                          base_url="https://openrouter.ai/api/v1")
 
 
+class TestRemoteRouteIsNeverClampedByNumCtx:
+    """num_ctx is a local-server knob (request `options`, served-window floor, compressor clamp).
+    A hosted route must never inherit a model.ollama_num_ctx left over from a local model."""
+
+    def test_hosted_route_ignores_num_ctx_override(self):
+        agent = _build_agent(
+            {"agent": {}, "model": {"ollama_num_ctx": 65536}}, probed_ctx=1_000_000,
+            base_url="https://openrouter.ai/api/v1",
+        )
+        assert agent._ollama_num_ctx is None
+        # The compaction trigger must follow the hosted model's real window, not the stale knob.
+        assert agent.context_compressor.context_length == 1_000_000
+
+
 class TestFloorRefusalNamesTheLocalServerHonestly:
     """#87075: a local OpenAI-compatible server without /api/show (llama.cpp, vLLM) that serves a
     sub-64K window must get server-agnostic guidance — raise the server's context or set

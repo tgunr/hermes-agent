@@ -11,6 +11,18 @@ def _configure_ollama_num_ctx(agent, _model_cfg, _config_context_length):
     # model.ollama_num_ctx overrides; model.context_length caps the detected value (VRAM).
     agent._ollama_num_ctx: int | None = None
     _override = _model_cfg.get("ollama_num_ctx") if isinstance(_model_cfg, dict) else None
+    # num_ctx is a local-server knob, and three consumers hang off _ollama_num_ctx: the request
+    # injection (extra_body.options.num_ctx), the served-window context floor and the compressor
+    # clamp. A hosted route must therefore never inherit it — a model.ollama_num_ctx left over
+    # from a local model would clamp a remote provider's compaction trigger (and send Ollama
+    # `options` to a server that never asked for them).
+    if not (agent.base_url and is_local_endpoint(agent.base_url)):
+        if _override is not None:
+            _ra().logger.debug(
+                "Ignoring model.ollama_num_ctx=%r on non-local route %s (num_ctx is local-only)",
+                _override, agent.base_url or "<unset base_url>",
+            )
+        return
     if _override is not None:
         try:
             agent._ollama_num_ctx = int(_override)
@@ -54,6 +66,8 @@ def _clamp_compressor_to_ollama_num_ctx(agent):
     # compressor targeting the probed window while the server truncated/rejected at num_ctx — the compaction
     # trigger could sit several times ABOVE the real served window and never fire. Clamp the compressor's
     # window to the effective num_ctx so threshold math operates on the context the server actually serves.
+    # _ollama_num_ctx is only ever set for a local route (see _configure_ollama_num_ctx), so a hosted
+    # provider can never be clamped by it.
     # (Overlaps #60103's silent-clamp dead zone; this is the init-order half.)
     _cc_window = getattr(agent.context_compressor, "context_length", 0) or 0
     if agent._ollama_num_ctx and agent._ollama_num_ctx > 0 and _cc_window and agent._ollama_num_ctx < _cc_window:
